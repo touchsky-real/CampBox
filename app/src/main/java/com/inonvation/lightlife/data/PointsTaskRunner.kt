@@ -37,7 +37,7 @@ class PointsTaskRunner(
     private val client = HttpClientProvider.client
     private val jsonAdapter: JsonAdapter<Map<String, Any?>> = MoshiProvider.instance
         .adapter(Types.newParameterizedType(Map::class.java, String::class.java, Any::class.java))
-    private val prefs by lazy { context?.getSharedPreferences("points_task", Context.MODE_PRIVATE) }
+    private val prefs by lazy { context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
 
     private fun today(): String = DateUtils.today()
 
@@ -249,99 +249,18 @@ class PointsTaskRunner(
     }
 
     /**
-     * 支付宝游戏/广告等重复任务。alipay 渠道签名，每次间隔 16~20 秒。
-     * 连续失败 2 次即停止，避免触发风控。
+     * 支付宝游戏/广告任务已失效（平台改为广告 SDK 服务端回调发放积分，纯接口调用不再加分），
+     * 相关执行逻辑已移除，避免空跑触发风控。
      */
-    private suspend fun runRepetitiveTask(
-        token: String,
-        ua: String,
-        log: suspend (String) -> Unit,
-        lastBalance: Int?,
-        taskCode: String,
-        label: String,
-        total: Int,
-    ): Int? {
-        var curBalance = lastBalance
-        log("开始${label}任务...")
-        var completed = 0
-        var totalEarned = 0
-        var consecutiveFails = 0
-        val maxConsecutiveFails = 2
 
-        for (i in 1..total) {
-            checkCancelled()
-            waitIfPaused(log)
-            val before = balance(token, ua)
-            val res = try {
-                completeTask(token, ua, taskCode, channel = "alipay")
-            } catch (e: TaskCancelledException) {
-                throw e
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                consecutiveFails++
-                log("$label 网络异常：${(e.message ?: "未知").take(60)}（连续失败 $consecutiveFails/$maxConsecutiveFails）")
-                if (consecutiveFails >= maxConsecutiveFails) {
-                    log("$label 连续失败达上限，停止")
-                    break
-                }
-                delay(5000)
-                continue
-            }
-            val after = balance(token, ua)
-            val earned = after?.let { a -> before?.let { a - it } }
-
-            if (res.codeInt() in REQUEST_ERROR_CODES) {
-                consecutiveFails++
-                log("$label 网络错误：${res.messageText()}（连续失败 $consecutiveFails/$maxConsecutiveFails）")
-                if (consecutiveFails >= maxConsecutiveFails) {
-                    log("$label 连续失败达上限，停止")
-                    break
-                }
-                delay(5000)
-                continue
-            }
-            if (isTaskFinished(res)) {
-                log("$label 任务已结束")
-                break
-            }
-            if (res.codeInt() == 0 && res["data"] != null) {
-                if (earned == null || earned <= 0) {
-                    log("$label 本次无积分，无需完成，跳过")
-                    break
-                }
-                completed++
-                consecutiveFails = 0
-                totalEarned += earned
-                curBalance = after ?: curBalance
-                log("$label $completed/$total 完成 (+$earned)，累计 +$totalEarned")
-                if (completed < total) {
-                    val wait = 16000L + (0..4000).random()
-                    log("等待 ${wait / 1000.0} 秒继续...")
-                    delay(wait)
-                }
-            } else {
-                consecutiveFails++
-                log("$label 单次失败：${res.messageText()}（连续失败 $consecutiveFails/$maxConsecutiveFails）")
-                if (consecutiveFails >= maxConsecutiveFails) {
-                    log("$label 连续失败达上限，停止")
-                    break
-                }
-                delay(2000)
-            }
-        }
-        log("$label 任务结束：完成 $completed 次，累计 +$totalEarned 积分")
-        return curBalance
-    }
-
-    private suspend fun completeTask(token: String, ua: String, taskCode: String, channel: String = "android_app"): Map<String, Any?> {
+    private suspend fun completeTask(token: String, ua: String, taskCode: String): Map<String, Any?> {
         // 对齐官方风控流程：任务完成前先查验证码预检，data=true 表示被风控拦截
-        val captcha = request(IS_CAPTCHA, token, ua, emptyMap(), channel)
+        val captcha = request(IS_CAPTCHA, token, ua, emptyMap())
         if ((captcha["data"] as? Boolean) == true) {
             return mapOf("code" to CAPTCHA_REQUIRED_CODE, "msg" to "需要人机验证（请在官方 App 中完成验证后重试）")
         }
         // 官方 body 只传 taskCode（+可选 subtaskCode），token 由官方拦截器补进 body
-        return request(TASK_COMPLETED, token, ua, mapOf("taskCode" to taskCode), channel)
+        return request(TASK_COMPLETED, token, ua, mapOf("taskCode" to taskCode))
     }
 
     /** 服务端以 code=-1 且 msg 含「任务已结束」表示任务整体结束 */
@@ -462,13 +381,21 @@ class PointsTaskRunner(
     private fun Map<String, Any?>.dataMap(): Map<String, Any?> = this["data"] as? Map<String, Any?> ?: emptyMap()
 
     companion object {
+        /**
+         * 今日积分任务是否已完成（签到标记写入 points_task 文件）。
+         * 启动去重必须同时查这里和 SignInRunner 的 ad_video_state 标记：
+         * 两处标记由不同模块写入，任一存在都说明今天已刷过，避免每次启动重复执行。
+         */
+        fun isPointsDoneToday(context: Context?): Boolean {
+            val prefs = context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) ?: return false
+            return prefs.getString(KEY_SIGNIN_DATE, "") == DateUtils.today()
+        }
+
+        private const val PREFS_NAME = "points_task"
+
         // 官方 1.142.0 的 HeadInterceptor 用 App 实际版本号参与签名，旧脚本的 1.96.1 已被服务端拒绝
         const val VERSION = ApiConfig.VERSION
         const val HOME_BROWSE_TASK_CODE = "8b475b42-df8b-4039-b4c1-f9a0174a611a"
-        const val ALIPAY_VIDEO_TASK_CODE = "dc18b525-f679-47d8-805a-e331f8f3341d"
-        const val ALIPAY_AD_TASK_CODE = "9"
-        const val MAX_VIDEO_ATTEMPTS = 10
-        const val MAX_AD_ATTEMPTS = 50
         val SKIP_TASK_TITLES = listOf("浏览微博")
         val NOT_FINISH_TASKS = setOf(
             "7328b1db-d001-4e6a-a9e6-6ae8d281ddbf",
@@ -477,11 +404,7 @@ class PointsTaskRunner(
             "73f9f146-4b9a-4d14-9d81-3a83f1204b74",
             "12e8c1e4-65d9-45f2-8cc1-16763e710036",
         )
-        const val HTTP_ERROR_CODE = -1001
-        const val TIMEOUT_ERROR_CODE = -1002
-        const val REQUEST_EXCEPTION_CODE = -1003
         const val JSON_PARSE_ERROR_CODE = -1004
-        val REQUEST_ERROR_CODES = setOf(HTTP_ERROR_CODE, TIMEOUT_ERROR_CODE, REQUEST_EXCEPTION_CODE, JSON_PARSE_ERROR_CODE)
 
         private const val BASE = "https://userapi.qiekj.com"
         val USER_INFO = "$BASE/user/info"

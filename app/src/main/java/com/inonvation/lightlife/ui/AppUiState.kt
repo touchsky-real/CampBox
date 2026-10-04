@@ -83,7 +83,6 @@ data class AppUiState(
     val hapticEnabled: Boolean = true,
     val autoSignInEnabled: Boolean = true,
     val autoCampusNetEnabled: Boolean = false,
-    val userAgent: String = "",
 
     // ── 快捷方式 ──
     val quickLinks: List<QuickLink> = emptyList(),

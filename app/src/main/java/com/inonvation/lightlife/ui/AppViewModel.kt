@@ -134,9 +134,7 @@ class AppViewModel(
         pointsRunner = runner
         _state.update { it.copy(pointsRunning = true, pointsPaused = false, pointsLog = listOf("任务启动...")) }
         pointsJob = viewModelScope.launch {
-            var lastLog = ""
             val log: suspend (String) -> Unit = { msg ->
-                lastLog = msg
                 _state.update { s -> s.copy(pointsLog = (s.pointsLog + msg).takeLast(200)) }
             }
             try {
@@ -319,8 +317,9 @@ class AppViewModel(
     fun autoPointsOnLaunch() {
         if (!state.value.autoSignInEnabled) return
         if (!state.value.hasToken) return
-        // 积分任务包含签到，今日已签到视为已跑过，避免每次启动重复刷
-        if (signInRunner.isSignedInToday()) return
+        // 签到标记存在两处（手动签到写 ad_video_state，积分任务写 points_task），
+        // 任一为真都视为今天已刷过——否则每次启动都会重复执行积分任务
+        if (signInRunner.isSignedInToday() || PointsTaskRunner.isPointsDoneToday(context)) return
         if (state.value.pointsRunning) return
         startPointsTask()
     }

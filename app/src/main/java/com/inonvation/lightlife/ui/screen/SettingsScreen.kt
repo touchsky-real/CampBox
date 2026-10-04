@@ -34,9 +34,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import android.net.Uri as AndroidUri
 import com.inonvation.lightlife.ui.AppUiState
 import com.inonvation.lightlife.ui.AppViewModel
 import com.inonvation.lightlife.ui.theme.AppColors
@@ -261,6 +264,7 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 6.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             "版本",
@@ -268,10 +272,16 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f),
                         )
+                        val context = LocalContext.current
                         Text(
                             "LightLife v${state.appVersion}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, AndroidUri.parse(REPO_URL)),
+                                )
+                            },
                         )
                     }
                     Spacer(Modifier.height(12.dp))
@@ -387,3 +397,6 @@ private fun AccountCard(
         }
     }
 }
+
+// 仓库主页：设置页版本号点击跳转
+private const val REPO_URL = "https://github.com/touchsky-real/light-life"
