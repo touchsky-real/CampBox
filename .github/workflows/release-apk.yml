@@ -132,6 +132,10 @@ jobs:
         run: |
           git fetch origin main
           git checkout main
+          if [ ! -f RELEASE.md ]; then
+            echo "main 分支不存在 RELEASE.md，跳过清理"
+            exit 0
+          fi
           git rm RELEASE.md
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
