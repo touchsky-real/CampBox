@@ -1,6 +1,6 @@
 # LightLife 速查
 
-基于 [wzs0512/qiekj-android](https://github.com/wzs0512/qiekj-android) 重构的饮水机积分助手。Jetpack Compose + Material3 UI，OkHttp 网络层，R8 全模式压缩。
+基于 [wzs0512/qiekj-android](https://github.com/wzs0512/qiekj-android) 重构的校园生活助手（胖乖生活开水 + 趣智校园淋浴），适配太原理工大学。Jetpack Compose + Material3 UI，OkHttp 网络层，R8 全模式压缩。
 
 ## 首要原则
 
@@ -18,8 +18,6 @@
 | `gradlew :app:testDebugUnitTest` | 单元测试 |
 | `gradlew :app:lintDebug` | Lint 检查 |
 
-构建脚本 `scripts\build.bat` / `build.ps1`：自动管理版本号，APK 归档至 `archive/`。
-
 **启动：** `adb shell monkey -p com.inonvation.lightlife -c android.intent.category.LAUNCHER 1`
 
 ## 源码架构
@@ -29,19 +27,18 @@
 
 | 路径 | 职责 |
 |------|------|
-| `MainActivity.kt` | 应用入口 |
+| `MainActivity.kt` | 应用入口，组装依赖 |
 | `ui/AppUiState.kt` | 所有 UI 状态类型定义 |
-| `ui/AppViewModel.kt` | 协调层，委托三个 Controller |
+| `ui/AppViewModel.kt` | 协调层，委托各 Controller |
 | `ui/auth/AuthController.kt` | 登录/Token 管理 |
-| `ui/points/PointsTaskController.kt` | 积分任务启动/暂停/停止 |
-| `ui/backup/BackupController.kt` | 备份导出/导入 |
+| `ui/qzxy/QzxyController.kt` | 趣智校园淋浴流程控制 |
+| `ui/ShortcutUtils.kt` | 桌面快捷方式创建 |
 | `ui/screen/` | 各页面组件，每个页面一个文件 |
 | `ui/screen/Components.kt` | 跨页面共享组件 |
 | `ui/screen/UnlockFlowCards.kt` | 解锁流程 4 种状态卡片 |
 | `ui/theme/AppStyles.kt` | UI 间距/颜色常量 |
-| `data/PointsTaskRunner.kt` | 积分任务执行核心逻辑 |
 | `data/` | API 接口、Repository、Store、Model |
-| `service/TaskForegroundService.kt` | 后台前台服务 |
+| `data/qzxy/` | 趣智校园 API、蓝牙扫描、密码工具 |
 
 ## 代码规范
 
@@ -49,10 +46,13 @@
 - UI 间距/颜色优先用 `AppStyles.kt` 常量
 - Kotlin 文件确保 UTF-8 编码
 - 新增页面或功能按上述结构放置
+- `UserPrefsStore` 的 SharedPreferences 文件名沿用历史名称 `points_task_state`，勿改（存量用户设置）
 
 ## 签名
 
-Debug 和 Release 同用 `app/debug.keystore`（alias `androiddebugkey`，password `android`）。**不要删除或重新生成**，否则存量安装需卸载重装。
+Debug 和本地 Release 同用 `app/debug.keystore`（alias `androiddebugkey`，password `android`）。**不要删除或重新生成**，否则存量安装需卸载重装。
+
+CI 配置了 `KEYSTORE_BASE64` 等 4 个 GitHub Secrets 时，Release 构建自动改用正式签名（见 `app/build.gradle.kts` 中 `ciRelease` 配置）。
 
 ## Commit 规范
 
@@ -69,18 +69,13 @@ Debug 和 Release 同用 `app/debug.keystore`（alias `androiddebugkey`，passwo
 
 ## 版本与发布
 
-- `app/build.gradle.kts` 中 `defaultConfig.versionName`
-- `versionCode` 从 `buildVersionCode` 属性读取
-- 发布：更新 versionName → commit → `git push origin main` → `git tag vX.Y.Z` → `git push --tags`
-- Release 工作流（`.github/workflows/release.yml`）：推送 `v*` tag 自动构建
+- 版本号来自 Git Tag：CI 用 `-PbuildVersionName` / `-PbuildVersionCode` 注入（versionCode = 主版本×10000 + 次版本×100 + 补丁版本）
+- 本地构建默认 `versionName = 3.1.0` / `versionCode = 12`
+- 发布：更新 build.gradle.kts 默认版本 → commit → `git push origin main` → `git tag vX.Y.Z` → `git push origin v*`（或 `git push --tags`）
+- 发布工作流（`.github/workflows/release-apk.yml`）：推送 `v*` tag 自动云端编译、签名并挂载 APK 到 Release
 - CI（`.github/workflows/ci.yml`）：PR 到 main 时运行 lint → test → assemble
-
-## 交互约定
-
-用户技术背景较弱，表述可能模糊或用词不准。遇到错误表述直接指出 + 替代方案；需求模糊时追问关键信息或列出选项让用户选。
 
 ## 注意事项
 
-- `PointsTaskRunner.kt` 中 `ANDROID_SECRET` / `ALIPAY_SECRET` 是接口签名密钥
 - 不要上传个人 Token、抓包文件、签名密钥到公开仓库
 - Lint 禁用了 `NullSafeMutableLiveData`、`RememberInComposition`、`FrequentlyChangingValue`、`AutoboxingStateCreation`

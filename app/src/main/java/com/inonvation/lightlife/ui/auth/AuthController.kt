@@ -1,7 +1,7 @@
 ﻿package com.inonvation.lightlife.ui.auth
 
 import com.inonvation.lightlife.data.AppRepository
-import com.inonvation.lightlife.data.PointsTaskStateStore
+import com.inonvation.lightlife.data.UserPrefsStore
 import com.inonvation.lightlife.ui.AppUiState
 import com.inonvation.lightlife.ui.UnlockFlowState
 import kotlinx.coroutines.CoroutineScope
@@ -14,7 +14,7 @@ class AuthController(
     private val updateState: ((AppUiState) -> AppUiState) -> Unit,
     private val scope: CoroutineScope,
     private val repository: AppRepository,
-    private val taskStateStore: PointsTaskStateStore?,
+    private val userPrefsStore: UserPrefsStore?,
     private val onAuthSuccess: () -> Unit,
     private val showToast: (String) -> Unit,
     private val showError: (String) -> Unit,
@@ -119,7 +119,6 @@ class AuthController(
         repository.clearToken()
         repository.savePhone("")
         repository.clearOrderHistory()
-        taskStateStore?.reset()
         updateState {
             it.copy(
                 hasToken = false,

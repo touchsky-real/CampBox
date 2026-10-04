@@ -32,7 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.inonvation.lightlife.data.AppRepository
 import com.inonvation.lightlife.data.OrderHistoryStore
-import com.inonvation.lightlife.data.PointsTaskStateStore
+import com.inonvation.lightlife.data.UserPrefsStore
 import com.inonvation.lightlife.data.QuickLinkStore
 import com.inonvation.lightlife.data.TokenStore
 import com.inonvation.lightlife.data.qzxy.QzxyAuthStore
@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
             tokenStore = TokenStore(applicationContext),
             orderHistoryStore = OrderHistoryStore(applicationContext),
         )
-        val taskStateStore = PointsTaskStateStore(applicationContext)
+        val userPrefsStore = UserPrefsStore(applicationContext)
         val themePrefs = ThemePreferences(applicationContext)
         val quickLinkStore = QuickLinkStore(applicationContext)
         val qzxyRepository = QzxyRepository(QzxyAuthStore(applicationContext))
@@ -67,7 +67,7 @@ class MainActivity : ComponentActivity() {
                     application = application,
                     repository = repository,
                     appVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown",
-                    taskStateStore = taskStateStore,
+                    userPrefsStore = userPrefsStore,
                     themePreferences = themePrefs,
                     quickLinkStore = quickLinkStore,
                     qzxyRepository = qzxyRepository,

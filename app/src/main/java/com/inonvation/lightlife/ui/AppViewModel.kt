@@ -9,7 +9,7 @@ import com.inonvation.lightlife.data.ApiConfig
 import com.inonvation.lightlife.data.AppRepository
 import com.inonvation.lightlife.data.DEFAULT_QUICK_LINKS
 import com.inonvation.lightlife.data.DeviceItem
-import com.inonvation.lightlife.data.PointsTaskStateStore
+import com.inonvation.lightlife.data.UserPrefsStore
 import com.inonvation.lightlife.data.QuickLinkStore
 import com.inonvation.lightlife.data.SignInRunner
 import com.inonvation.lightlife.data.TokenExpiredException
@@ -43,7 +43,7 @@ class AppViewModel(
     application: Application,
     private val repository: AppRepository,
     private val appVersion: String = "",
-    private val taskStateStore: PointsTaskStateStore? = null,
+    private val userPrefsStore: UserPrefsStore? = null,
     private val themePreferences: ThemePreferences? = null,
     private val quickLinkStore: QuickLinkStore? = null,
     private val qzxyRepository: QzxyRepository,
@@ -95,7 +95,7 @@ class AppViewModel(
             updateState = { _state.update(it) },
             scope = viewModelScope,
             repository = repository,
-            taskStateStore = taskStateStore,
+            userPrefsStore = userPrefsStore,
             onAuthSuccess = {
                 refreshBalance()
                 refreshDevices()
@@ -131,7 +131,7 @@ class AppViewModel(
 
     // ── Init ──
     init {
-        taskStateStore?.let {
+        userPrefsStore?.let {
             _state.update { s -> s.copy(
                 hapticEnabled = it.isHapticEnabled(),
                 autoSignInEnabled = it.isAutoSignInEnabled(),
@@ -476,17 +476,17 @@ class AppViewModel(
     }
     fun toggleHaptic() {
         val v = !state.value.hapticEnabled
-        taskStateStore?.setHapticEnabled(v)
+        userPrefsStore?.setHapticEnabled(v)
         _state.update { it.copy(hapticEnabled = v) }
     }
     fun toggleAutoSignIn() {
         val v = !state.value.autoSignInEnabled
-        taskStateStore?.setAutoSignInEnabled(v)
+        userPrefsStore?.setAutoSignInEnabled(v)
         _state.update { it.copy(autoSignInEnabled = v) }
     }
     fun toggleUsePointsForUnlock() {
         val v = !state.value.usePointsForUnlock
-        taskStateStore?.setUsePointsForUnlockEnabled(v)
+        userPrefsStore?.setUsePointsForUnlockEnabled(v)
         _state.update { it.copy(usePointsForUnlock = v) }
         showToast(if (v) "开水将使用积分抵扣" else "开水不使用积分抵扣")
     }
@@ -517,13 +517,13 @@ class AppViewModelFactory(
     private val application: Application,
     private val repository: AppRepository,
     private val appVersion: String = "",
-    private val taskStateStore: PointsTaskStateStore? = null,
+    private val userPrefsStore: UserPrefsStore? = null,
     private val themePreferences: ThemePreferences? = null,
     private val quickLinkStore: QuickLinkStore? = null,
     private val qzxyRepository: QzxyRepository,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return AppViewModel(application, repository, appVersion, taskStateStore, themePreferences, quickLinkStore, qzxyRepository) as T
+        return AppViewModel(application, repository, appVersion, userPrefsStore, themePreferences, quickLinkStore, qzxyRepository) as T
     }
 }

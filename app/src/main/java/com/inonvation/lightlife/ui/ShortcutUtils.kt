@@ -24,7 +24,6 @@ const val ACTION_OPEN_DEVICE_SHORTCUT = "com.inonvation.lightlife.OPEN_DEVICE_SH
 const val EXTRA_GOODS_ID = "goods_id"
 const val EXTRA_DEVICE_ID = "device_id"
 const val EXTRA_GOODS_NAME = "goods_name"
-const val PROJECT_URL = "https://github.com/Inonvation/light-life"
 
 fun shortcutRequestFromIntent(intent: Intent?): DeviceShortcutRequest? {
     if (intent?.action != ACTION_OPEN_DEVICE_SHORTCUT) return null

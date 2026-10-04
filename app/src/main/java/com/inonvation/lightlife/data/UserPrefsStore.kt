@@ -2,8 +2,8 @@
 
 import android.content.Context
 
-/** 运行状态与少量用户偏好存储（签到、开水、主题之外的轻量设置） */
-class PointsTaskStateStore(context: Context) {
+/** 用户偏好存储：触感、积分抵扣、自动签到开关（SharedPreferences 文件名沿用历史名称，勿改） */
+class UserPrefsStore(context: Context) {
     private val prefs = context.getSharedPreferences("points_task_state", Context.MODE_PRIVATE)
 
     // ── 设置开关 ──
@@ -17,12 +17,4 @@ class PointsTaskStateStore(context: Context) {
     /** 打开 App 时自动签到（默认开启） */
     fun isAutoSignInEnabled(): Boolean = prefs.getBoolean("auto_sign_in", true)
     fun setAutoSignInEnabled(v: Boolean) { prefs.edit().putBoolean("auto_sign_in", v).apply() }
-
-    fun getUserAgent(): String = prefs.getString("user_agent", "") ?: ""
-    fun setUserAgent(ua: String) { prefs.edit().putString("user_agent", ua).apply() }
-
-    /** 登出时清除账号相关状态，保留用户偏好 */
-    fun reset() {
-        prefs.edit().remove("user_agent").apply()
-    }
 }

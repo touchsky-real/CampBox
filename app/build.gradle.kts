@@ -8,6 +8,10 @@ android {
     namespace = "com.inonvation.lightlife"
     compileSdk = 35
 
+    // CI 注入的签名信息（GitHub Secrets 解码后的 keystore 文件 + 密码）
+    val ciKeystoreFile = System.getenv("KEYSTORE_FILE")
+    val hasCiKeystore = ciKeystoreFile != null && File(ciKeystoreFile).exists()
+
     signingConfigs {
         create("fixedDebug") {
             storeFile = file("debug.keystore")
@@ -15,14 +19,22 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        if (hasCiKeystore) {
+            create("ciRelease") {
+                storeFile = File(ciKeystoreFile!!)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     defaultConfig {
         applicationId = "com.inonvation.lightlife"
         minSdk = 26
         targetSdk = 35
-        versionCode = project.findProperty("buildVersionCode")?.toString()?.toIntOrNull() ?: 11
-        versionName = "3.0.0"
+        versionCode = project.findProperty("buildVersionCode")?.toString()?.toIntOrNull() ?: 12
+        versionName = project.findProperty("buildVersionName")?.toString() ?: "3.1.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
@@ -34,7 +46,12 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("fixedDebug")
+            // CI 配置了 Secrets 则用正式签名，否则回退 debug.keystore（保持与历史版本签名一致）
+            signingConfig = if (hasCiKeystore) {
+                signingConfigs.getByName("ciRelease")
+            } else {
+                signingConfigs.getByName("fixedDebug")
+            }
         }
     }
 
@@ -70,12 +87,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.3")
     implementation("androidx.security:security-crypto:1.1.0")
-    implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("com.squareup.retrofit2:retrofit:2.12.0")
     implementation("com.squareup.retrofit2:converter-moshi:2.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
-    implementation("com.kizitonwose.calendar:compose:2.6.0")
     compileOnly("com.google.errorprone:error_prone_annotations:2.36.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
@@ -92,6 +107,3 @@ tasks.register<Copy>("archiveDebugApk") {
     into(rootProject.layout.projectDirectory.dir("archive"))
     rename { "app-debug-v${version}.apk" }
 }
-
-
-
