@@ -8,10 +8,6 @@ android {
     namespace = "com.inonvation.lightlife"
     compileSdk = 35
 
-    // CI 注入的签名信息（GitHub Secrets 解码后的 keystore 文件 + 密码）
-    val ciKeystoreFile = System.getenv("KEYSTORE_FILE")
-    val hasCiKeystore = ciKeystoreFile != null && File(ciKeystoreFile).exists()
-
     signingConfigs {
         create("fixedDebug") {
             storeFile = file("debug.keystore")
@@ -19,9 +15,11 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
-        if (hasCiKeystore) {
+        // CI 注入的签名信息（GitHub Secrets 解码后的 keystore 文件 + 密码）
+        val ciKeystoreFile = System.getenv("KEYSTORE_FILE")
+        if (ciKeystoreFile != null && File(ciKeystoreFile).exists()) {
             create("ciRelease") {
-                storeFile = File(ciKeystoreFile!!)
+                storeFile = File(ciKeystoreFile)
                 storePassword = System.getenv("KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("KEY_ALIAS")
                 keyPassword = System.getenv("KEY_PASSWORD")
@@ -47,7 +45,7 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // CI 配置了 Secrets 则用正式签名，否则回退 debug.keystore（保持与历史版本签名一致）
-            signingConfig = if (hasCiKeystore) {
+            signingConfig = if (signingConfigs.findByName("ciRelease") != null) {
                 signingConfigs.getByName("ciRelease")
             } else {
                 signingConfigs.getByName("fixedDebug")

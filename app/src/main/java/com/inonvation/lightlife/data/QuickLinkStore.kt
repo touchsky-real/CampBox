@@ -13,8 +13,11 @@ data class QuickLink(val name: String = "", val url: String = "", val packageNam
 val DEFAULT_QUICK_LINKS = listOf(
     QuickLink("淘宝取件码", "https://pages-fast.m.taobao.com/wow/z/uniapp/1011717/last-mile-fe/end-collect-platform/identity-code", "com.taobao.taobao", 0),
     QuickLink("拼多多取件码", "pinduoduo://com.xunmeng.pinduoduo/mdkd/package", "com.xunmeng.pinduoduo", 1),
-    QuickLink("学校教务系统", "https://eapp2.juwp.edu.cn:9443/cas/login?service=http%3A%2F%2Fportal.juwp.edu.cn%2Fcas%2Flogin_portal", "", 2),
+    QuickLink("菜鸟身份码", "intent:#Intent;action=android.intent.action.VIEW;component=com.cainiao.wireless/.homepage.view.activity.HomePageActivity;launchFlags=0x10008000;S.entrance=shortcuts_identity_code;S.jumpPath=guoguo%3A%2F%2Fgo%2Fstation_code%3Fentrance%3Dshortcuts;end", "com.cainiao.wireless", 2),
 )
+
+/** 预设快捷方式数量 */
+val PRESET_LINK_COUNT = DEFAULT_QUICK_LINKS.size
 
 class QuickLinkStore(private val context: Context) {
     private val prefs = context.getSharedPreferences("quick_links", Context.MODE_PRIVATE)
@@ -22,13 +25,50 @@ class QuickLinkStore(private val context: Context) {
     private val iconDir = File(context.filesDir, "quicklink_icons").apply { mkdirs() }
 
     init {
-        // 首次安装或清空数据后，prefs 完全为空，自动写入 3 个预设快捷方式及其图标
+        // 首次安装或清空数据后，prefs 完全为空，自动写入预设快捷方式及其图标
         if (prefs.all.isEmpty()) {
             ensureDefaults()
+        } else {
+            migrate()
         }
     }
 
-    /** 写入默认预设快捷方式（前 3 个槽位）及对应预设图标 */
+    /**
+     * 数据迁移：
+     * 1. 旧版预设槽 2 为「学校教务系统」已删除，升级后将未修改过的教务条目清空
+     * 2. 若槽 2 目前为空（未自定义过），一次性写入新预设「菜鸟身份码」
+     */
+    private fun migrate() {
+        val removedUrl = "https://eapp2.juwp.edu.cn:9443/cas/login?service=http%3A%2F%2Fportal.juwp.edu.cn%2Fcas%2Flogin_portal"
+        val url = prefs.getString("url_2", "") ?: ""
+        if (url == removedUrl) {
+            removeIcon(2)
+            prefs.edit()
+                .remove("name_2").remove("url_2").remove("pkg_2")
+                .putInt("preset_2", -1)
+                .apply()
+        }
+        if (!prefs.getBoolean("cainiao_preset_added", false)) {
+            val current2 = prefs.getString("url_2", "") ?: ""
+            if (current2.isBlank()) {
+                prefs.edit()
+                    .putString("name_2", DEFAULT_QUICK_LINKS[2].name)
+                    .putString("url_2", DEFAULT_QUICK_LINKS[2].url)
+                    .putString("pkg_2", DEFAULT_QUICK_LINKS[2].packageName)
+                    .putInt("preset_2", 2)
+                    .apply()
+                savePresetIcon(2, 2)
+            }
+            prefs.edit().putBoolean("cainiao_preset_added", true).apply()
+        }
+        // 已有菜鸟预设但缺图标时（老用户升级且未自定义过图标）补上
+        val isPreset2 = prefs.getInt("preset_2", -1) == 2 && prefs.getString("url_2", "") == DEFAULT_QUICK_LINKS[2].url
+        if (isPreset2 && prefs.getString("icon_2", "").isNullOrBlank()) {
+            savePresetIcon(2, 2)
+        }
+    }
+
+    /** 写入默认预设快捷方式及对应预设图标 */
     private fun ensureDefaults() {
         DEFAULT_QUICK_LINKS.forEachIndexed { index, link ->
             prefs.edit()
@@ -103,7 +143,7 @@ class QuickLinkStore(private val context: Context) {
         val resId = when (presetIndex) {
             0 -> R.drawable.ic_preset_taobao
             1 -> R.drawable.ic_preset_pinduoduo
-            2 -> R.drawable.ic_preset_jiaowu
+            2 -> R.drawable.ic_preset_cainiao
             else -> return
         }
         try {

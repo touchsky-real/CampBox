@@ -6,6 +6,7 @@ import java.security.MessageDigest
 
 class HeaderInterceptor(
     private val tokenProvider: () -> String?,
+    private val deviceIdProvider: () -> String? = { null },
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val timestamp = System.currentTimeMillis().toString()
@@ -22,6 +23,8 @@ class HeaderInterceptor(
             .header("Host", "userapi.qiekj.com")
             .header("Connection", "Keep-Alive")
             .header("Accept-Encoding", "gzip")
+        // 官方所有请求头都带 deviceId（OAID），服务端以它做设备风控；登录也带，保证会话绑定一致
+        deviceIdProvider()?.takeIf { it.isNotBlank() }?.let { builder.header("deviceId", it) }
 
         tokenProvider()?.takeIf { it.isNotBlank() }?.let { token ->
             builder.header("token", token)

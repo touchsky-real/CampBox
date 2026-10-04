@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.inonvation.lightlife.data.DEFAULT_QUICK_LINKS
+import com.inonvation.lightlife.data.PRESET_LINK_COUNT
 import com.inonvation.lightlife.ui.AppUiState
 import com.inonvation.lightlife.ui.AppViewModel
 import com.inonvation.lightlife.ui.theme.Spacings
@@ -55,9 +56,9 @@ import androidx.compose.ui.text.input.KeyboardType
 @Composable
 fun QuickLinksSettingsScreen(state: AppUiState, vm: AppViewModel) {
     val haptic = LocalHapticFeedback.current
-    // 动态显示数量：初始为最后有内容的槽位+1，最少3个，最多9个
+    // 动态显示数量：初始为最后有内容的槽位+1，最少预设+1，最多 9 个
     val lastUsedIndex = state.quickLinks.indexOfLast { it.url.isNotBlank() || it.name.isNotBlank() }
-    val initialDisplay = maxOf(3, (lastUsedIndex + 2).coerceAtLeast(3))
+    val initialDisplay = maxOf(PRESET_LINK_COUNT + 1, (lastUsedIndex + 2).coerceAtLeast(PRESET_LINK_COUNT + 1))
     var displayCount by remember { mutableIntStateOf(initialDisplay.coerceAtMost(9)) }
 
     Column(
@@ -87,6 +88,8 @@ fun QuickLinksSettingsScreen(state: AppUiState, vm: AppViewModel) {
 
             itemsIndexed(state.quickLinks.take(displayCount), key = { i, _ -> "quicklink_$i" }) { index, link ->
                 val hasContent = link.name.isNotBlank() || link.url.isNotBlank()
+                // 真预设 = 前两个槽且内容未被改动（presetIndex 保留）；被编辑过即为自定义
+                val isPreset = link.presetIndex in 0 until PRESET_LINK_COUNT
                 // 显示标题：有内容时用名称，无内容时用编号
                 val title = when {
                     hasContent -> link.name.ifBlank { "未命名链接" }
@@ -105,7 +108,7 @@ fun QuickLinksSettingsScreen(state: AppUiState, vm: AppViewModel) {
                                 color = if (hasContent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f),
                             )
-                            if (index < 3) {
+                            if (isPreset) {
                                 Spacer(Modifier.width(4.dp))
                                 Surface(
                                     shape = RoundedCornerShape(4.dp),
@@ -125,8 +128,8 @@ fun QuickLinksSettingsScreen(state: AppUiState, vm: AppViewModel) {
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp),
                             )
-                            // 自定义槽折叠态：删除按钮（仅非预设且有内容时显示）
-                            if (index >= 3 && hasContent && !expanded.value) {
+                            // 折叠态删除按钮：所有有内容的自定义条目（含被改过的预设槽）
+                            if (!isPreset && hasContent && !expanded.value) {
                                 Spacer(Modifier.width(8.dp))
                                 Icon(
                                     Icons.Outlined.Close,
@@ -159,7 +162,7 @@ fun QuickLinksSettingsScreen(state: AppUiState, vm: AppViewModel) {
                                     value = link.url,
                                     onValueChange = { vm.updateQuickLink(index, link.name, it, link.packageName, link.presetIndex) },
                                     label = { Text("链接") },
-                                    placeholder = { Text("如：https:// 或 weixin://") },
+                                    placeholder = { Text("支持 https://、alipay://、intent://...") },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth(),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -179,8 +182,8 @@ fun QuickLinksSettingsScreen(state: AppUiState, vm: AppViewModel) {
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    // 左：重置（预设槽）/ 删除此快捷方式（自定义槽）
-                                    if (index < 3) {
+                                    // 左：原预设槽可重置找回；其余显示删除
+                                    if (index < PRESET_LINK_COUNT) {
                                         TextButton(
                                             onClick = {
                                                 if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -192,7 +195,8 @@ fun QuickLinksSettingsScreen(state: AppUiState, vm: AppViewModel) {
                                         ) {
                                             Text("重置为默认", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                                         }
-                                    } else {
+                                    }
+                                    if (!isPreset && hasContent) {
                                         TextButton(
                                             onClick = {
                                                 if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -202,12 +206,12 @@ fun QuickLinksSettingsScreen(state: AppUiState, vm: AppViewModel) {
                                             Text("删除", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
                                         }
                                     }
-                                    // 右：清除（预设槽有内容时）
-                                    if (index < 3 && hasContent) {
+                                    // 右：未改动过的预设条目可一键清空
+                                    if (isPreset && hasContent) {
                                         TextButton(
                                             onClick = {
                                                 if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                vm.updateQuickLink(index, "", "", "", index)
+                                                vm.deleteQuickLink(index)
                                             },
                                         ) {
                                             Text("清除", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)

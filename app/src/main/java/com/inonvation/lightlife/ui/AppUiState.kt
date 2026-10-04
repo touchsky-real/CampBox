@@ -62,11 +62,27 @@ data class AppUiState(
     val totalWaterCount: Int = 0,
     val orderHistory: List<OrderHistoryItem> = emptyList(),
 
+    // ── 积分任务 ──
+    val pointsRunning: Boolean = false,
+    val pointsPaused: Boolean = false,
+    val pointsLog: List<String> = emptyList(),
+    val pointsTodayEarned: Int = 0,
+
+    // ── 校园网 ──
+    val campusUsername: String = "",
+    val campusPassword: String = "",
+    val campusPasswordVisible: Boolean = false,
+    val campusHasSaved: Boolean = false,
+    val campusLoggingIn: Boolean = false,
+    val campusLog: List<String> = emptyList(),
+    val campusLastSuccess: Boolean? = null,
+
     // ── 设置 ──
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val colorTheme: ColorTheme = ColorTheme.GREEN,
     val hapticEnabled: Boolean = true,
     val autoSignInEnabled: Boolean = true,
+    val autoCampusNetEnabled: Boolean = false,
     val userAgent: String = "",
 
     // ── 快捷方式 ──

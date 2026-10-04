@@ -46,8 +46,8 @@ import com.inonvation.lightlife.ui.theme.Spacings
 import com.inonvation.lightlife.ui.theme.ThemeMode
 
 /**
- * 设置页：按 外观 / 喝水·胖乖生活 / 洗澡·趣智校园 / 通用 分组，
- * 账号管理跟着平台走，视觉与主页统一。
+ * 设置页：按 外观 / 喝水·胖乖生活 / 校园网 / 洗澡·趣智校园 / 通用 / 调试 分组，
+ * 每个平台的账号管理与该平台的功能开关放在一起，调试入口集中在最后。
  */
 @Composable
 fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
@@ -106,7 +106,7 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
             StandardCard {
                 Column {
                     Text("主题模式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("切换应用的明暗主题", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("应用的明暗主题", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
                         listOf(ThemeMode.SYSTEM to "跟随系统", ThemeMode.LIGHT to "浅色", ThemeMode.DARK to "深色").forEach { (mode, label) ->
@@ -121,7 +121,7 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                     HorizontalDivider()
                     Spacer(Modifier.height(12.dp))
                     Text("主题配色", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("更换应用的主色调", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("应用的主色调", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
                         listOf(
@@ -143,7 +143,7 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                     Spacer(Modifier.height(12.dp))
                     SettingSwitchRow(
                         title = "触感反馈",
-                        subtitle = "按钮和开关操作时触发振动",
+                        subtitle = "操作按钮和开关时轻微振动",
                         checked = state.hapticEnabled,
                         onCheckedChange = { vm.toggleHaptic() },
                         hapticEnabled = state.hapticEnabled,
@@ -152,7 +152,7 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
             }
 
             // ═══ 喝水 · 胖乖生活 ═══
-            SectionLabel("喝水 · 胖乖生活")
+            SectionLabel("喝水 · 胖乖生活", subtitle = "开水与积分属于此平台；账号为手机号注册")
             Spacer(Modifier.height(Spacings.sm))
             AccountCard(
                 platform = "胖乖生活账号",
@@ -171,35 +171,32 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
             StandardCard {
                 Column {
                     SettingSwitchRow(
-                        title = "启动时自动签到",
-                        subtitle = "打开 App 时自动完成今日签到",
+                        title = "启动时自动刷积分",
+                        subtitle = "打开 App 自动完成签到和积分任务；当日已刷过不会重复",
                         checked = state.autoSignInEnabled,
                         onCheckedChange = { vm.toggleAutoSignIn() },
                         hapticEnabled = state.hapticEnabled,
                     )
-                    Spacer(Modifier.height(12.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(12.dp))
-                    ClickableRow(
-                        title = "我的 Token",
-                        subtitle = "查看当前登录凭证，可用于调试",
-                        onClick = { vm.showCurrentToken() },
-                        hapticEnabled = state.hapticEnabled,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(12.dp))
-                    ClickableRow(
-                        title = "设备信息",
-                        subtitle = "当前客户端标识",
-                        onClick = { vm.showCurrentDeviceInfo() },
+                }
+            }
+
+            // ═══ 校园网 ═══
+            SectionLabel("校园网", subtitle = "学校 Dr.COM 上网认证，用学号登录，与前两个平台账号互不相关")
+            Spacer(Modifier.height(Spacings.sm))
+            StandardCard {
+                Column {
+                    SettingSwitchRow(
+                        title = "启动时自动连校园网",
+                        subtitle = "自动用已保存的账号认证",
+                        checked = state.autoCampusNetEnabled,
+                        onCheckedChange = { vm.toggleAutoCampusNet() },
                         hapticEnabled = state.hapticEnabled,
                     )
                 }
             }
 
             // ═══ 洗澡 · 趣智校园 ═══
-            SectionLabel("洗澡 · 趣智校园")
+            SectionLabel("洗澡 · 趣智校园", subtitle = "宿舍淋浴属于此平台，需另注册趣智账号，与胖乖无关")
             Spacer(Modifier.height(Spacings.sm))
             AccountCard(
                 platform = "趣智校园账号",
@@ -243,7 +240,7 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                 Column {
                     SettingSwitchRow(
                         title = "显示首页快捷方式",
-                        subtitle = "在主界面显示快捷链接卡片",
+                        subtitle = "在主界面顶部显示常用链接卡片",
                         checked = state.quickLinksEnabled,
                         onCheckedChange = { vm.toggleQuickLinksEnabled() },
                         hapticEnabled = state.hapticEnabled,
@@ -285,6 +282,29 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                         subtitle = "使用即代表同意以下条款",
                         isError = true,
                         onClick = { showDisclaimerDialog = true }
+                    )
+                }
+            }
+
+            // ═══ 调试 ═══
+            SectionLabel("调试")
+            Spacer(Modifier.height(Spacings.sm))
+            StandardCard {
+                Column {
+                    ClickableRow(
+                        title = "我的 Token",
+                        subtitle = "当前胖乖生活登录凭证",
+                        onClick = { vm.showCurrentToken() },
+                        hapticEnabled = state.hapticEnabled,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(12.dp))
+                    ClickableRow(
+                        title = "设备信息",
+                        subtitle = "请求所用的客户端标识，反馈问题时可提供",
+                        onClick = { vm.showCurrentDeviceInfo() },
+                        hapticEnabled = state.hapticEnabled,
                     )
                 }
             }

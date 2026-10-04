@@ -147,6 +147,15 @@ internal fun InlineSuccess(result: UnlockResult, onShowDetail: () -> Unit) {
         InlineSuccessPriceRow("原价", result.originPrice)
         InlineSuccessPriceRow("抵扣", result.integralCost)
         InlineSuccessPriceRow("花费", calculateActualCost(result))
+        result.note?.let { note ->
+            Spacer(Modifier.height(4.dp))
+            Text(
+                note,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                modifier = Modifier.padding(end = 16.dp),
+            )
+        }
         Spacer(Modifier.height(4.dp))
         Text(
             "查看详情",

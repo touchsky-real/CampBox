@@ -2,6 +2,7 @@
 
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
+import retrofit2.http.HeaderMap
 import retrofit2.http.POST
 
 interface DeviceApi {
@@ -67,6 +68,7 @@ interface DeviceApi {
     @FormUrlEncoded
     @POST("goods/water/unlock")
     suspend fun unlockWater(
+        @HeaderMap headers: Map<String, String>,
         @Field("skuId") skuId: String,
         @Field("promotions") promotions: String,
         @Field("token") token: String,

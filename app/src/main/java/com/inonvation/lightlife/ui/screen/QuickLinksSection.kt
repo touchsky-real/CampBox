@@ -220,7 +220,6 @@ private fun SortableQuickLinkCard(
         }
     }
 }
-
 @Composable
 private fun QuickLinkCard(
     name: String,
@@ -238,7 +237,6 @@ private fun QuickLinkCard(
         modifier = modifier,
     )
 }
-
 @Composable
 internal fun QuickLinksSection(
     state: AppUiState,
@@ -376,22 +374,7 @@ internal fun QuickLinksSection(
                                         },
                                         onClick = {
                                             if (!isSorting.value && hasLink) {
-                                                try {
-                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link.url))
-                                                    if (link.packageName.isNotBlank()) {
-                                                        intent.setPackage(link.packageName)
-                                                    }
-                                                    context.startActivity(intent)
-                                                } catch (e: android.content.ActivityNotFoundException) {
-                                                    try {
-                                                        val fallbackIntent = Intent(Intent.ACTION_VIEW, Uri.parse(link.url))
-                                                        context.startActivity(fallbackIntent)
-                                                    } catch (e2: Exception) {
-                                                        android.widget.Toast.makeText(context, "无法打开链接", android.widget.Toast.LENGTH_SHORT).show()
-                                                    }
-                                                } catch (e: Exception) {
-                                                    android.widget.Toast.makeText(context, "无法打开链接", android.widget.Toast.LENGTH_SHORT).show()
-                                                }
+                                                openQuickLink(context, link)
                                             } else if (!isSorting.value) {
                                                 if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 vm.showQuickLinksSettings()
@@ -468,6 +451,34 @@ internal fun QuickLinksSection(
                 }
             }
         }
+        }
+    }
+}
+/**
+ * 打开快捷链接。支持三种形式：
+ * - `intent://...` 原生 Intent Scheme（Intent.parseUri 解析，可带 action/data/package）
+ * - `http(s)://...` 普通链接（可选 packageName 指定打开的应用）
+ * - 其他自定义 scheme（alipay://、taobao:// 等）
+ */
+private fun openQuickLink(context: android.content.Context, link: QuickLink) {
+    val url = link.url.trim()
+    runCatching {
+        val intent = if (url.startsWith("intent:", ignoreCase = true) || url.startsWith("intent://", ignoreCase = true)) {
+            Intent.parseUri(url, Intent.URI_INTENT_SCHEME).apply {
+                if (link.packageName.isNotBlank()) `package` = link.packageName
+            }
+        } else {
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                if (link.packageName.isNotBlank()) setPackage(link.packageName)
+            }
+        }
+        context.startActivity(intent)
+    }.onFailure {
+        // intent: 解析失败或指定包不存在时，退化为普通 VIEW 再试一次
+        runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.onFailure {
+            android.widget.Toast.makeText(context, "无法打开链接", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 }

@@ -12,7 +12,7 @@ object DeviceErrorDiagnosis {
     fun diagnose(code: Int?, message: String?, step: String): DiagnosisResult {
         val raw = buildRawError(code, message)
         val msg = message?.lowercase() ?: ""
-        val codeVal = code ?: -1
+        val codeVal = code
 
         val (reason, suggestions) = when {
             // 积分风控
@@ -28,9 +28,9 @@ object DeviceErrorDiagnosis {
                 )
 
             // 位置风控
-            msg.contains("位置") || msg.contains("location") || codeVal == 33003 ->
+            msg.contains("位置") || msg.contains("定位") || msg.contains("location") || codeVal == 33003 ->
                 "位置风控拦截" to listOf(
-                    "确认手机 GPS 定位已开启",
+                    "确认手机定位服务已开启",
                     "确认定位权限已授予本应用",
                     "不要使用 VPN 或代理",
                 )
@@ -70,7 +70,7 @@ object DeviceErrorDiagnosis {
                     "等待几分钟后重试",
                 )
 
-            // Token 过期
+            // Token 过期 / 未登录
             msg.contains("token") && (msg.contains("过期") || msg.contains("无效") || msg.contains("invalid") || msg.contains("expired")) || codeVal == 401 || codeVal == 403 ->
                 "登录凭证已过期" to listOf(
                     "返回「我的」页面重新登录",
@@ -87,7 +87,12 @@ object DeviceErrorDiagnosis {
         }
 
         return DiagnosisResult(
-            primaryReason = reason ?: "未知错误（code: $codeVal）",
+            // code 未知时展示服务端原始消息，不再伪造 code=-1 误导排查
+            primaryReason = reason ?: when {
+                !message.isNullOrBlank() -> "请求失败：$message"
+                codeVal != null -> "未知错误（code: $codeVal）"
+                else -> "未知错误"
+            },
             rawError = raw,
             step = step,
             suggestions = suggestions,

@@ -40,13 +40,13 @@ class ModelsTest {
         assertEquals("hello", envelope.requireData())
     }
 
-    @Test(expected = RuntimeException::class)
+    @Test(expected = ApiException::class)
     fun apiEnvelope_requireData_nullData_throws() {
         val envelope = ApiEnvelope<String>(code = 400, msg = "error")
         envelope.requireData()
     }
 
-    @Test(expected = RuntimeException::class)
+    @Test(expected = ApiException::class)
     fun apiEnvelope_requireData_nullAll_throws() {
         ApiEnvelope<String>().requireData()
     }
@@ -96,10 +96,23 @@ class ModelsTest {
         var thrownMsg = ""
         try {
             envelope.requireData()
-        } catch (e: RuntimeException) {
+        } catch (e: ApiException) {
             thrownMsg = e.message ?: ""
         }
         assertEquals("something went wrong", thrownMsg)
+    }
+
+    @Test
+    fun apiException_keepsServerCode() {
+        val e = ApiException(1234, "余额不足")
+        assertEquals(1234, e.code)
+        assertEquals("余额不足", e.message)
+    }
+
+    @Test
+    fun unlockResult_noteDefaultsNull() {
+        val r = UnlockResult("NO", "ID", "1.00", "0", "0", emptyList(), 0L)
+        assertNull(r.note)
     }
 
     @Test

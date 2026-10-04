@@ -1,5 +1,6 @@
 ﻿package com.inonvation.lightlife
 
+import android.Manifest
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
@@ -31,10 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.inonvation.lightlife.data.AppRepository
+import com.inonvation.lightlife.data.DeviceIdProvider
 import com.inonvation.lightlife.data.OrderHistoryStore
 import com.inonvation.lightlife.data.UserPrefsStore
 import com.inonvation.lightlife.data.QuickLinkStore
 import com.inonvation.lightlife.data.TokenStore
+import com.inonvation.lightlife.data.WaterLocationProvider
 import com.inonvation.lightlife.data.qzxy.QzxyAuthStore
 import com.inonvation.lightlife.data.qzxy.QzxyRepository
 import com.inonvation.lightlife.ui.AppViewModel
@@ -51,11 +54,31 @@ import com.inonvation.lightlife.ui.theme.ThemeMode
 import com.inonvation.lightlife.ui.theme.ThemePreferences
 
 class MainActivity : ComponentActivity() {
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { }
+
+    override fun onStart() {
+        super.onStart()
+        val preferences = getPreferences(MODE_PRIVATE)
+        if (!preferences.getBoolean(KEY_LOCATION_PERMISSION_REQUESTED, false)) {
+            preferences.edit().putBoolean(KEY_LOCATION_PERMISSION_REQUESTED, true).apply()
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ),
+            )
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val repository = AppRepository(
             tokenStore = TokenStore(applicationContext),
             orderHistoryStore = OrderHistoryStore(applicationContext),
+            locationProvider = WaterLocationProvider(applicationContext),
+            deviceIdProvider = { DeviceIdProvider.deviceId(applicationContext) },
         )
         val userPrefsStore = UserPrefsStore(applicationContext)
         val themePrefs = ThemePreferences(applicationContext)
@@ -87,6 +110,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+private const val KEY_LOCATION_PERMISSION_REQUESTED = "location_permission_requested"
 
 @Composable
 private fun AppRoot(vm: AppViewModel) {

@@ -7,11 +7,18 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.inonvation.lightlife.data.ApiConfig
 import com.inonvation.lightlife.data.AppRepository
+import com.inonvation.lightlife.data.CampusNetResult
+import com.inonvation.lightlife.data.CampusNetRunner
+import com.inonvation.lightlife.data.CampusNetStore
 import com.inonvation.lightlife.data.DEFAULT_QUICK_LINKS
+import com.inonvation.lightlife.data.PRESET_LINK_COUNT
+import com.inonvation.lightlife.data.DeviceIdProvider
 import com.inonvation.lightlife.data.DeviceItem
+import com.inonvation.lightlife.data.PointsTaskRunner
 import com.inonvation.lightlife.data.UserPrefsStore
 import com.inonvation.lightlife.data.QuickLinkStore
 import com.inonvation.lightlife.data.SignInRunner
+import com.inonvation.lightlife.data.TaskCancelledException
 import com.inonvation.lightlife.data.TokenExpiredException
 import com.inonvation.lightlife.data.UnlockException
 import com.inonvation.lightlife.ui.auth.AuthController
@@ -25,6 +32,7 @@ import com.inonvation.lightlife.ui.theme.ThemeMode
 import com.inonvation.lightlife.ui.theme.ThemePreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +58,7 @@ class AppViewModel(
 ) : ViewModel() {
     private val context: Context = application.applicationContext
     private val unlockMutex = kotlinx.coroutines.sync.Mutex()
+    private var unlockJob: Job? = null
     private var devicesLoadAttempted = false
 
     // ── State ──
@@ -106,7 +115,139 @@ class AppViewModel(
         )
     }
 
-    private val signInRunner = SignInRunner({ repository.localToken() }, context)
+    private val signInRunner = SignInRunner({ repository.localToken() }, context) { deviceId }
+
+    // 与主客户端共享的稳定设备标识（模拟官方 OAID，登录/请求/积分任务统一使用）
+    private val deviceId by lazy { DeviceIdProvider.deviceId(context) }
+
+    // ── 积分任务 ──
+    private var pointsRunner: PointsTaskRunner? = null
+    private var pointsJob: Job? = null
+
+    fun startPointsTask() {
+        if (state.value.pointsRunning) return
+        if (!state.value.hasToken) {
+            showError("请先登录")
+            return
+        }
+        val runner = PointsTaskRunner({ repository.localToken() }, context) { deviceId }
+        pointsRunner = runner
+        _state.update { it.copy(pointsRunning = true, pointsPaused = false, pointsLog = listOf("任务启动...")) }
+        pointsJob = viewModelScope.launch {
+            var lastLog = ""
+            val log: suspend (String) -> Unit = { msg ->
+                lastLog = msg
+                _state.update { s -> s.copy(pointsLog = (s.pointsLog + msg).takeLast(200)) }
+            }
+            try {
+                runner.run(ApiConfig.POINTS_USER_AGENT, log)
+                _state.update { it.copy(pointsRunning = false) }
+                refreshBalance()
+                _state.update { s -> s.copy(signInDoneToday = true) }
+                showToast("积分任务完成")
+            } catch (e: TaskCancelledException) {
+                _state.update { s -> s.copy(pointsRunning = false, pointsLog = s.pointsLog + "任务已停止") }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val msg = e.message ?: "任务异常"
+                if (msg == "token") {
+                    _state.update { it.copy(pointsRunning = false) }
+                    authController.handleTokenExpired()
+                } else {
+                    _state.update { s -> s.copy(pointsRunning = false, pointsLog = s.pointsLog + "任务失败：$msg") }
+                }
+            }
+        }
+    }
+
+    fun stopPointsTask() {
+        pointsRunner?.cancelled = true
+        pointsJob?.cancel()
+        _state.update { s -> s.copy(pointsRunning = false, pointsLog = s.pointsLog + "已停止") }
+    }
+
+    fun togglePausePointsTask() {
+        val runner = pointsRunner ?: return
+        runner.paused = !runner.paused
+        _state.update { it.copy(pointsPaused = runner.paused) }
+    }
+
+    fun clearPointsLog() {
+        _state.update { it.copy(pointsLog = emptyList()) }
+    }
+
+    // ── 校园网认证 ──
+    private val campusNetStore by lazy { CampusNetStore(context) }
+    private val campusNetRunner by lazy { CampusNetRunner(context) }
+
+    init {
+        _state.update {
+            it.copy(
+                campusUsername = campusNetStore.getUsername(),
+                campusPassword = campusNetStore.getPassword(),
+                campusHasSaved = campusNetStore.hasSaved(),
+            )
+        }
+    }
+
+    fun updateCampusUsername(v: String) = _state.update { it.copy(campusUsername = v) }
+    fun updateCampusPassword(v: String) = _state.update { it.copy(campusPassword = v) }
+    fun toggleCampusPasswordVisible() =
+        _state.update { it.copy(campusPasswordVisible = !it.campusPasswordVisible) }
+
+    fun campusNetLogin(silent: Boolean = false) = viewModelScope.launch {
+        if (state.value.campusLoggingIn) return@launch
+        val username = state.value.campusUsername.trim()
+        val password = state.value.campusPassword
+        if (username.isBlank() || password.isBlank()) {
+            if (!silent) showError("请输入校园网账号和密码")
+            return@launch
+        }
+        campusNetStore.save(username, password)
+        _state.update {
+            it.copy(
+                campusLoggingIn = true,
+                campusLog = if (silent) listOf("启动自动连接...") else listOf("开始认证..."),
+                campusLastSuccess = null,
+            )
+        }
+        val log: suspend (String) -> Unit = { msg ->
+            _state.update { s -> s.copy(campusLog = (s.campusLog + msg).takeLast(30)) }
+        }
+        val result = runCatching { campusNetRunner.login(username, password, log) }
+            .getOrElse { e ->
+                log("异常：${(e.message ?: "未知错误").take(60)}")
+                CampusNetResult.Failure("认证异常：${(e.message ?: "未知错误").take(60)}")
+            }
+        val ok = result is CampusNetResult.Success
+        _state.update { it.copy(campusLoggingIn = false, campusLastSuccess = ok, campusHasSaved = campusNetStore.hasSaved()) }
+        when {
+            ok -> showToast("校园网已连通")
+            silent -> showError((result as CampusNetResult.Failure).reason)
+            else -> log((result as CampusNetResult.Failure).reason)
+        }
+    }
+
+    /** 启动时自动连接校园网：开关开启 + 已保存账号才执行，失败按原因提示 */
+    fun autoCampusNetOnLaunch() {
+        if (!state.value.autoCampusNetEnabled) return
+        if (!campusNetStore.hasSaved()) return
+        if (state.value.campusLoggingIn) return
+        campusNetLogin(silent = true)
+    }
+
+    fun toggleAutoCampusNet() {
+        val v = !state.value.autoCampusNetEnabled
+        userPrefsStore?.setAutoCampusNetEnabled(v)
+        _state.update { it.copy(autoCampusNetEnabled = v) }
+        if (v) showToast("启动时将自动连接校园网") else showToast("已关闭启动自动连校园网")
+    }
+
+    fun clearCampusCredentials() {
+        campusNetStore.clear()
+        _state.update { it.copy(campusUsername = "", campusPassword = "", campusHasSaved = false, campusLog = emptyList()) }
+    }
 
     // ── 淋浴（趣智校园）控制器 ──
     private fun updateQzxy(reduce: (QzxyUiState) -> QzxyUiState) {
@@ -135,6 +276,7 @@ class AppViewModel(
             _state.update { s -> s.copy(
                 hapticEnabled = it.isHapticEnabled(),
                 autoSignInEnabled = it.isAutoSignInEnabled(),
+                autoCampusNetEnabled = it.isAutoCampusNetEnabled(),
                 usePointsForUnlock = it.isUsePointsForUnlockEnabled(),
             ) }
         }
@@ -153,8 +295,10 @@ class AppViewModel(
             refreshBalance()
             refreshTodayWater()
         }
-        // 打开 App 时自动签到
-        autoSignInOnLaunch()
+        // 打开 App 时自动刷积分（签到已包含在积分任务流程里）
+        autoPointsOnLaunch()
+        // 打开 App 时自动连接校园网
+        autoCampusNetOnLaunch()
         // 恢复趣智校园登录态与进行中的洗澡订单
         qzxyController.restoreSession()
     }
@@ -171,11 +315,14 @@ class AppViewModel(
     fun logout() = authController.logout()
 
     // ── 签到 ──
-    fun autoSignInOnLaunch() {
+    /** 启动时自动刷积分：开关开启 + 已登录 + 今日未跑过才执行，复用手动入口的全部保护 */
+    fun autoPointsOnLaunch() {
         if (!state.value.autoSignInEnabled) return
         if (!state.value.hasToken) return
+        // 积分任务包含签到，今日已签到视为已跑过，避免每次启动重复刷
         if (signInRunner.isSignedInToday()) return
-        signInNow()
+        if (state.value.pointsRunning) return
+        startPointsTask()
     }
 
     fun signInNow() = viewModelScope.launch {
@@ -245,6 +392,7 @@ class AppViewModel(
 
     // ── 解锁 ──
     fun unlock(device: DeviceItem) = viewModelScope.launch {
+        if (state.value.unlocking) return@launch
         if (!unlockMutex.tryLock()) return@launch
         try {
             _state.update {
@@ -254,9 +402,9 @@ class AppViewModel(
             unlockTimerJob = viewModelScope.launch {
                 while (isActive) {
                     delay(1000)
-                    val cur = state.value.unlockFlowState
-                    if (cur is UnlockFlowState.Working) {
-                        _state.update { it.copy(unlockElapsedSeconds = cur.elapsedSeconds + 1) }
+                    // 直接累加全局秒数；Working 卡片展示时用 165 - elapsed 计算剩余
+                    if (state.value.unlockFlowState is UnlockFlowState.Working) {
+                        _state.update { it.copy(unlockElapsedSeconds = state.value.unlockElapsedSeconds + 1) }
                     }
                 }
             }
@@ -264,7 +412,8 @@ class AppViewModel(
             unlockTimeoutJob = viewModelScope.launch {
                 delay(165_000)
                 if (state.value.unlockFlowState is UnlockFlowState.Working) {
-                    unlockTimerJob?.cancel()
+                    // 兜底：165 秒到点设备仍未上报结束，视为平台已自动关阀结算，结束前台等待
+                    unlockJob?.cancel()
                     _state.update {
                         it.copy(
                             unlocking = false,
@@ -281,31 +430,37 @@ class AppViewModel(
                     showToast("饮水机已自动关闭并结算")
                 }
             }
-            runCatching {
-                repository.unlockDevice(device, usePoints = state.value.usePointsForUnlock) { step ->
-                    val isWorking = step.contains("等待") || step.contains("设备工作") ||
-                        step.contains("创建后付") || step.contains("查询订单")
-                    _state.update {
-                        it.copy(unlockStatus = step, unlockFlowState = if (isWorking) UnlockFlowState.Working(step, state.value.unlockElapsedSeconds) else UnlockFlowState.PreChecking(step))
+            unlockJob = viewModelScope.launch {
+                runCatching {
+                    repository.unlockDevice(device, usePoints = state.value.usePointsForUnlock) { step ->
+                        val isWorking = step.contains("等待") || step.contains("设备工作") ||
+                            step.contains("创建后付") || step.contains("查询订单")
+                        _state.update {
+                            it.copy(unlockStatus = step, unlockFlowState = if (isWorking) UnlockFlowState.Working(step, state.value.unlockElapsedSeconds) else UnlockFlowState.PreChecking(step))
+                        }
                     }
+                }.onSuccess { result ->
+                    unlockTimerJob?.cancel()
+                    unlockTimeoutJob?.cancel()
+                    unlockJob = null
+                    _state.update { it.copy(unlocking = false, unlockStatus = null, unlockFlowState = UnlockFlowState.Success(result), unlockElapsedSeconds = 0, unlockFlowHidden = false, orderHistory = repository.orderHistory()) }
+                    refreshBalance()
+                }.onFailure { e ->
+                    unlockTimerJob?.cancel()
+                    unlockTimeoutJob?.cancel()
+                    unlockJob = null
+                    // 165 秒兜底主动取消轮询时不算失败，状态已由超时处理器收尾
+                    if (e is kotlinx.coroutines.CancellationException) return@launch
+                    if (e is TokenExpiredException) {
+                        _state.update { it.copy(unlocking = false, unlockStatus = null, unlockFlowState = UnlockFlowState.Idle, unlockElapsedSeconds = 0, unlockFlowHidden = false) }
+                        authController.handleTokenExpired()
+                        return@launch
+                    }
+                    val diag = if (e is UnlockException) e.diagnosis else null
+                    val failState = if (diag != null) UnlockFlowState.Failed(diag.primaryReason, diag.step, diag.rawError, diag.suggestions)
+                        else UnlockFlowState.Failed(e.message ?: "未知错误", "未知", e.message ?: "")
+                    _state.update { it.copy(unlocking = false, unlockStatus = null, unlockFlowState = failState, unlockElapsedSeconds = 0, unlockFlowHidden = false) }
                 }
-            }.onSuccess { result ->
-                unlockTimerJob?.cancel()
-                unlockTimeoutJob?.cancel()
-                _state.update { it.copy(unlocking = false, unlockStatus = null, unlockFlowState = UnlockFlowState.Success(result), unlockElapsedSeconds = 0, unlockFlowHidden = false, orderHistory = repository.orderHistory()) }
-                refreshBalance()
-            }.onFailure { e ->
-                unlockTimerJob?.cancel()
-                unlockTimeoutJob?.cancel()
-                if (e is TokenExpiredException) {
-                    _state.update { it.copy(unlocking = false, unlockStatus = null, unlockFlowState = UnlockFlowState.Idle, unlockElapsedSeconds = 0, unlockFlowHidden = false) }
-                    authController.handleTokenExpired()
-                    return@launch
-                }
-                val diag = if (e is UnlockException) e.diagnosis else null
-                val failState = if (diag != null) UnlockFlowState.Failed(diag.primaryReason, diag.step, diag.rawError, diag.suggestions)
-                    else UnlockFlowState.Failed(e.message ?: "未知错误", "未知", e.message ?: "")
-                _state.update { it.copy(unlocking = false, unlockStatus = null, unlockFlowState = failState, unlockElapsedSeconds = 0, unlockFlowHidden = false) }
             }
         } finally {
             unlockMutex.unlock()
@@ -354,22 +509,37 @@ class AppViewModel(
     }
 
     // ── 快捷方式 ──
+    /**
+     * 更新快捷方式。预设槽位（前 PRESET_LINK_COUNT 个）一旦内容被改动，
+     * 就脱离预设：保存时清掉 presetIndex（图标也不再强制用预设图标），
+     * 该槽位变为普通自定义槽，可删除。
+     */
     fun updateQuickLink(index: Int, name: String, url: String, packageName: String, presetIndex: Int = -1) {
-        quickLinkStore?.updateLink(index, name, url, packageName, presetIndex)
-        if (presetIndex >= 0 && name.isNotBlank()) {
-            quickLinkStore?.savePresetIcon(index, presetIndex)
+        val isPresetSlot = index < PRESET_LINK_COUNT
+        val preset = DEFAULT_QUICK_LINKS.getOrNull(index)
+        val contentMatchesPreset = isPresetSlot && preset != null &&
+            name == preset.name && url == preset.url && packageName == preset.packageName
+        val effectivePreset = if (isPresetSlot && contentMatchesPreset) index else -1
+
+        quickLinkStore?.updateLink(index, name, url, packageName, effectivePreset)
+        if (effectivePreset >= 0 && name.isNotBlank()) {
+            quickLinkStore?.savePresetIcon(index, effectivePreset)
         }
         quickLinkStore?.let {
             _state.update { s -> s.copy(quickLinks = it.getLinks()) }
         }
     }
 
+    /** 删除任意槽位：预设槽清空后仍可被「重置为默认」找回；自定义槽删除后后续条目前移补位 */
     fun deleteQuickLink(index: Int) {
         val links = _state.value.quickLinks.toMutableList()
         if (index !in links.indices) return
-        val pi = if (index < 3) index else -1
-        quickLinkStore?.updateLink(index, "", "", "", pi)
-        if (index >= 3) {
+        quickLinkStore?.removeIcon(index)
+        if (index < PRESET_LINK_COUNT) {
+            // 预设槽被改为自定义后允许删除，清空内容即可
+            quickLinkStore?.updateLink(index, "", "", "", -1)
+        } else {
+            quickLinkStore?.updateLink(index, "", "", "", -1)
             for (i in index until links.size - 1) {
                 val next = links[i + 1]
                 quickLinkStore?.updateLink(i, next.name, next.url, next.packageName, next.presetIndex)
@@ -400,8 +570,10 @@ class AppViewModel(
     fun resetQuickLinksToDefault() {
         DEFAULT_QUICK_LINKS.forEachIndexed { index, link ->
             quickLinkStore?.updateLink(index, link.name, link.url, link.packageName, link.presetIndex)
+            quickLinkStore?.savePresetIcon(index, link.presetIndex)
         }
-        for (i in 3 until 9) {
+        for (i in DEFAULT_QUICK_LINKS.size until 9) {
+            quickLinkStore?.removeIcon(i)
             quickLinkStore?.updateLink(i, "", "", "", -1)
         }
         quickLinkStore?.let {

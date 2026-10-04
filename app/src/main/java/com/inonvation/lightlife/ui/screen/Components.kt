@@ -200,24 +200,28 @@ fun SectionHeader(title: String) {
     Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
 }
 
-/** 首页/设置统一分区小标题：小号灰字 + 细分隔线 */
+/** 首页/设置统一分区小标题：小号灰字 + 细分隔线；subtitle 可选，一句话说明该分区是什么 */
 @Composable
-fun SectionLabel(title: String, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = Spacings.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            title,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.5.sp,
-        )
-        Spacer(Modifier.width(Spacings.sm))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+fun SectionLabel(title: String, modifier: Modifier = Modifier, subtitle: String? = null) {
+    Column(modifier = modifier.fillMaxWidth().padding(top = Spacings.xs)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                title,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 1.5.sp,
+            )
+            Spacer(Modifier.width(Spacings.sm))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+        }
+        if (subtitle != null) {
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+            )
+        }
     }
 }
 
@@ -500,7 +504,7 @@ fun LoginCard(
             }
             Spacer(Modifier.height(Spacings.xs))
             Text(
-                "注意：手机号登录会刷新 Token，旧 Token 将失效",
+                "手机号登录会在原设备上生成新 Token，官方 App 需重新登录",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -536,7 +540,7 @@ fun LoginCard(
                 Column {
                     Spacer(Modifier.height(Spacings.sm))
                     Text(
-                        "粘贴从软件获取的 Token 即可登录",
+                        "粘贴从官方 App 抓取的 Token 直接登录。注意：Token 登录的会话绑定原设备，积分任务可能受限，建议优先用手机号登录",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

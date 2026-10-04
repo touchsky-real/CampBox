@@ -24,6 +24,7 @@ data class SignInResult(
 class SignInRunner(
     private val tokenProvider: () -> String?,
     private val context: Context? = null,
+    private val deviceIdProvider: () -> String? = { null },
 ) {
     private val client = HttpClientProvider.client
     private val jsonAdapter: JsonAdapter<Map<String, Any?>> = MoshiProvider.instance
@@ -115,7 +116,7 @@ class SignInRunner(
         channel: String,
     ): okhttp3.Headers {
         val sign = sign(timestamp, url, token)
-        return okhttp3.Headers.Builder()
+        val headers = okhttp3.Headers.Builder()
             .add("Authorization", token)
             .add("Version", VERSION)
             .add("channel", channel)
@@ -126,7 +127,9 @@ class SignInRunner(
             .add("Host", "userapi.qiekj.com")
             .add("Connection", "Keep-Alive")
             .add("User-Agent", userAgent)
-            .build()
+        // 与主客户端共享的设备标识，保持会话与设备绑定一致
+        deviceIdProvider()?.takeIf { it.isNotBlank() }?.let { headers.add("deviceId", it) }
+        return headers.build()
     }
 
     private fun sign(timestamp: String, url: String, token: String): String = sha256(

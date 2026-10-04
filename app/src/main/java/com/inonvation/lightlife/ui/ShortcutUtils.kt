@@ -24,6 +24,7 @@ const val ACTION_OPEN_DEVICE_SHORTCUT = "com.inonvation.lightlife.OPEN_DEVICE_SH
 const val EXTRA_GOODS_ID = "goods_id"
 const val EXTRA_DEVICE_ID = "device_id"
 const val EXTRA_GOODS_NAME = "goods_name"
+const val PROJECT_URL = "https://github.com/Inonvation/light-life"
 
 fun shortcutRequestFromIntent(intent: Intent?): DeviceShortcutRequest? {
     if (intent?.action != ACTION_OPEN_DEVICE_SHORTCUT) return null
@@ -72,7 +73,16 @@ fun pinQuickLinkShortcut(context: Context, link: QuickLink, index: Int, store: Q
         return
     }
     val label = link.name.ifBlank { "快捷方式" }.take(10)
-    val shortcutIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(link.url)).apply {
+    // intent:// 形式的链接要用 Intent.parseUri 还原，否则会被当成普通 URL
+    val shortcutIntent = (
+        if (link.url.trim().startsWith("intent:", ignoreCase = true)) {
+            runCatching { Intent.parseUri(link.url.trim(), Intent.URI_INTENT_SCHEME) }
+                .getOrNull()
+                ?: Intent(Intent.ACTION_VIEW, android.net.Uri.parse(link.url))
+        } else {
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse(link.url))
+        }
+    ).apply {
         if (link.packageName.isNotBlank()) {
             `package` = link.packageName
         }

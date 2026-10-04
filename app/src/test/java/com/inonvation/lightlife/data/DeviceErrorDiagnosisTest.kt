@@ -27,7 +27,7 @@ class DeviceErrorDiagnosisTest {
     fun diagnose_locationRisk_returnsLocationAdvice() {
         val result = DeviceErrorDiagnosis.diagnose(33003, "位置风控拦截", "位置风控检查")
         assertEquals("位置风控拦截", result.primaryReason)
-        assertTrue(result.suggestions.any { it.contains("GPS") })
+        assertTrue(result.suggestions.any { it.contains("定位服务") })
     }
 
     @Test
@@ -81,7 +81,7 @@ class DeviceErrorDiagnosisTest {
     @Test
     fun diagnose_unknownError_returnsFallbackWithCode() {
         val result = DeviceErrorDiagnosis.diagnose(9999, "some unknown error", "某个步骤")
-        assertTrue(result.primaryReason.contains("9999"))
+        assertTrue(result.primaryReason.contains("some unknown error"))
         assertEquals("某个步骤", result.step)
         assertTrue(result.rawError.contains("9999"))
         assertTrue(result.rawError.contains("some unknown error"))
@@ -91,14 +91,14 @@ class DeviceErrorDiagnosisTest {
     @Test
     fun diagnose_nullCodeAndMessage_returnsMinimalFallback() {
         val result = DeviceErrorDiagnosis.diagnose(null, null, "测试步骤")
-        assertEquals("未知错误（code: -1）", result.primaryReason)
+        assertEquals("未知错误", result.primaryReason)
         assertEquals("无详细错误信息", result.rawError)
     }
 
     @Test
     fun diagnose_emptyMessage_returnsMinimalFallback() {
         val result = DeviceErrorDiagnosis.diagnose(null, "", "测试步骤")
-        assertEquals("未知错误（code: -1）", result.primaryReason)
+        assertEquals("未知错误", result.primaryReason)
     }
 
     @Test

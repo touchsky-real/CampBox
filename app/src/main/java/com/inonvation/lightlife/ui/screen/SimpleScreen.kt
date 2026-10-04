@@ -22,16 +22,19 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Devices
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -47,6 +50,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -69,6 +73,10 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.inonvation.lightlife.data.DeviceItem
@@ -94,6 +102,7 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
     var selectedDevice: DeviceItem? by remember { mutableStateOf(state.devices.firstOrNull()) }
     var showDeviceSheet by remember { mutableStateOf(false) }
     var showWaterDetail by remember { mutableStateOf(false) }
+    var showWaterHelp by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.devices) {
         if (selectedDevice == null || state.devices.none { it.id == selectedDevice!!.id }) {
@@ -162,6 +171,11 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                 contentPadding = PaddingValues(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(Spacings.md),
             ) {
+                // 快捷方式（置顶，未登录也可用）
+                if (state.quickLinksEnabled) {
+                    item { QuickLinksSection(state, vm, onPickIcon, cardVisible = true, haptic = haptic, context = ctx) }
+                }
+
                 if (!state.hasToken) {
                     item {
                         Spacer(Modifier.height(Spacings.sm))
@@ -185,7 +199,7 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                 item { AccountStripRow(state, vm, haptic) }
 
                 // 开水
-                item { SectionLabel("开水") }
+                item { SectionLabel("开水", subtitle = "饮水机服务来自「胖乖生活」，用胖乖账号计费，积分可抵扣水费") }
                 item {
                     WaterCard(
                         state = state,
@@ -194,20 +208,23 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                         onSelectDevice = { selectedDevice = it },
                         onShowDetail = { showWaterDetail = true },
                         onPickDevice = { showDeviceSheet = true },
+                        onShowHelp = { showWaterHelp = true },
                         haptic = haptic,
                         context = ctx,
                     )
                 }
 
-                // 洗澡
-                item { SectionLabel("洗澡") }
-                item { QzxyShowerSection(state = state, vm = vm, haptic = haptic) }
+                // 校园网
+                item { SectionLabel("校园网", subtitle = "学校 Dr.COM 上网认证，用学号登录，与胖乖、趣智校园账号互不相关") }
+                item { CampusNetCard(state, vm, haptic) }
 
-                // 快捷方式
-                if (state.quickLinksEnabled) {
-                    item { SectionLabel("快捷方式") }
-                    item { QuickLinksSection(state, vm, onPickIcon, cardVisible = true, haptic = haptic, context = ctx) }
-                }
+                // 积分任务
+                item { SectionLabel("积分任务", subtitle = "刷的是胖乖生活积分，可用于抵扣开水费用") }
+                item { PointsTaskCard(state, vm, haptic) }
+
+                // 洗澡（趣智校园）
+                item { SectionLabel("洗澡", subtitle = "宿舍淋浴服务来自「趣智校园」，需另注册趣智账号，与胖乖无关") }
+                item { QzxyShowerSection(state = state, vm = vm, haptic = haptic) }
 
                 item {
                     Text(
@@ -285,6 +302,34 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
             },
         )
     }
+
+    // 开水使用说明弹窗：提示扫码登记与免密签约两个前提
+    if (showWaterHelp) {
+        AlertDialog(
+            onDismissRequest = { showWaterHelp = false },
+            title = { Text("开水使用说明", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column {
+                    Text(
+                        "本机列表来自「胖乖生活」账户的「最近使用」记录。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text("• 新饮水机需先在官方 App 扫描机身二维码登记一次，之后才会出现在这里。", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(4.dp))
+                    Text("• 开水为「后付费」，需先在官方 App 开通支付宝免密支付，否则会在「开通后付」步骤报错。", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(4.dp))
+                    Text("• 已开通但不想被自动扣款：可在支付宝「设置 → 支付设置 → 免密支付」中调低限额。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showWaterHelp = false }) {
+                    Text("知道了")
+                }
+            },
+        )
+    }
 }
 
 /** 顶栏下的一条账户状态行：小票余额 + 累计开水 + 签到按钮 */
@@ -352,6 +397,7 @@ private fun WaterCard(
     onSelectDevice: (DeviceItem) -> Unit,
     onShowDetail: () -> Unit,
     onPickDevice: () -> Unit,
+    onShowHelp: () -> Unit,
     haptic: HapticFeedback,
     context: android.content.Context,
 ) {
@@ -371,31 +417,51 @@ private fun WaterCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Column(modifier = Modifier.padding(Spacings.lg)) {
-            // ── 行1 设备行 ──
+            // ── 行1 设备行（右端含 info 图标说明使用前提） ──
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(enabled = phase == WaterPhase.Idle && state.devices.isNotEmpty()) { onPickDevice() }
-                    .padding(vertical = 2.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(deviceName, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                if (state.devices.isEmpty()) {
-                    Spacer(Modifier.width(Spacings.sm))
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    onClick = {
+                        if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onShowHelp()
+                    },
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        Icons.Outlined.Info,
+                        contentDescription = "开水说明",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    )
+                }
+                if (state.devices.isNotEmpty()) {
+                    // 选择设备的下拉箭头，参与设备行点击
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(enabled = phase == WaterPhase.Idle) { onPickDevice() }
+                            .padding(4.dp),
+                    ) {
+                        if (phase == WaterPhase.Idle) {
+                            Icon(
+                                Icons.Outlined.KeyboardArrowDown,
+                                contentDescription = "选择设备",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                } else {
+                    Spacer(Modifier.width(Spacings.xs))
                     Text(
                         "刷新",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable { vm.refreshDevices() },
-                    )
-                } else if (phase == WaterPhase.Idle) {
-                    Spacer(Modifier.width(Spacings.xs))
-                    Icon(
-                        Icons.Outlined.KeyboardArrowDown,
-                        contentDescription = "选择设备",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -419,7 +485,7 @@ private fun WaterCard(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("使用积分抵扣", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                    Text("关闭后开水将不消耗积分", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("开启后开水优先用积分抵扣", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(
                                     checked = state.usePointsForUnlock,
@@ -679,8 +745,260 @@ private fun DetailRow(label: String, value: String) {
     }
 }
 
+/** 校园网认证卡：账号密码输入 + 一键联网；未连 Wi-Fi 时提示 */
+@Composable
+private fun CampusNetCard(state: AppUiState, vm: AppViewModel, haptic: HapticFeedback) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = CardShapes.cardCorner,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(modifier = Modifier.padding(Spacings.lg)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("一键连校园网", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                if (state.campusLoggingIn) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "认证中", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                } else if (state.campusLastSuccess == true) {
+                    Icon(
+                        Icons.Filled.CheckCircle, contentDescription = null,
+                        tint = AppColors.runningIndicator, modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(Spacings.xs))
+            Text(
+                "自动向校园网网关提交认证。请先连接校园网 Wi-Fi，再点「连接」",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(Spacings.md))
+
+            OutlinedTextField(
+                value = state.campusUsername,
+                onValueChange = { vm.updateCampusUsername(it) },
+                label = { Text("学号 / 上网账号") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next
+                ),
+            )
+            Spacer(Modifier.height(Spacings.sm))
+            OutlinedTextField(
+                value = state.campusPassword,
+                onValueChange = { vm.updateCampusPassword(it) },
+                label = { Text("上网密码") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                visualTransformation = if (state.campusPasswordVisible) VisualTransformation.None
+                else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password, imeAction = ImeAction.Done
+                ),
+                trailingIcon = {
+                    IconButton(onClick = { vm.toggleCampusPasswordVisible() }) {
+                        Text(
+                            if (state.campusPasswordVisible) "隐藏" else "显示",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                },
+            )
+            if (state.campusHasSaved) {
+                Spacer(Modifier.height(Spacings.xs))
+                Text(
+                    "账号已保存在本机，下次点「连接」即可",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(Spacings.md))
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = {
+                        if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        vm.campusNetLogin()
+                    },
+                    enabled = !state.campusLoggingIn &&
+                        state.campusUsername.isNotBlank() && state.campusPassword.isNotBlank(),
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Text(
+                        if (state.campusLoggingIn) "认证中..." else "连接",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                if (state.campusHasSaved) {
+                    Spacer(Modifier.width(Spacings.sm))
+                    OutlinedButton(
+                        onClick = {
+                            if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            vm.clearCampusCredentials()
+                        },
+                        modifier = Modifier.height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("清除")
+                    }
+                }
+            }
+
+            // 认证日志
+            if (state.campusLog.isNotEmpty()) {
+                Spacer(Modifier.height(Spacings.md))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(10.dp),
+                ) {
+                    state.campusLog.takeLast(6).forEach { line ->
+                        Text(
+                            line,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (line.contains("成功") || line.contains("已连通") || line.contains("已在线") || line.contains("无需认证"))
+                                AppColors.runningIndicator else MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun formatClock(totalSeconds: Int): String {
     val m = totalSeconds / 60
     val s = totalSeconds % 60
     return "%02d:%02d".format(m, s)
+}
+
+/** 积分任务卡：未运行时展示说明+启动按钮；运行中展示实时日志+暂停/停止 */
+@Composable
+private fun PointsTaskCard(state: AppUiState, vm: AppViewModel, haptic: HapticFeedback) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = CardShapes.cardCorner,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(modifier = Modifier.padding(Spacings.lg)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("刷积分", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                if (state.pointsRunning) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            if (state.pointsPaused) "已暂停" else "运行中",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(Spacings.sm))
+
+            if (!state.pointsRunning && state.pointsLog.isEmpty()) {
+                Text(
+                    "自动完成签到、首页浏览和浏览类任务；广告、视频类任务需真实观看，无法自动完成",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(Spacings.md))
+                Button(
+                    onClick = {
+                        if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        vm.startPointsTask()
+                    },
+                    enabled = state.hasToken,
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Text("开始刷积分", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                }
+            } else {
+                // 实时日志（最多展示最近 8 条）
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 60.dp, max = 220.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(10.dp),
+                ) {
+                    val shown = state.pointsLog.takeLast(8)
+                    shown.forEach { line ->
+                        Text(
+                            line,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                    }
+                }
+                Spacer(Modifier.height(Spacings.md))
+                if (state.pointsRunning) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = {
+                                if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                vm.togglePausePointsTask()
+                            },
+                            modifier = Modifier.weight(1f).height(44.dp),
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                            Text(if (state.pointsPaused) "继续" else "暂停")
+                        }
+                        Spacer(Modifier.width(Spacings.sm))
+                        Button(
+                            onClick = {
+                                if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                vm.stopPointsTask()
+                            },
+                            modifier = Modifier.weight(1f).height(44.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            Text("停止", color = MaterialTheme.colorScheme.onError)
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            vm.clearPointsLog()
+                        },
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("清除记录，重新开始")
+                    }
+                }
+            }
+        }
+    }
 }

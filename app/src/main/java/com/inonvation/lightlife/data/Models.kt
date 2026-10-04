@@ -14,7 +14,7 @@ data class ApiEnvelope<T>(
         if (TokenExpiredException.isTokenExpired(code, rawMsg)) {
             throw TokenExpiredException(rawMsg)
         }
-        error(rawMsg)
+        throw ApiException(code, rawMsg)
     }
 }
 
@@ -85,7 +85,15 @@ data class UnlockResult(
     val integralCost: String,
     val otherPromotions: List<PromotionItem>,
     val completedAt: Long,
+    // 非空表示出水成功但账单环节降级（费用以官方账单为准），UI 据此显示提示而非报错
+    val note: String? = null,
 )
+
+// 服务端业务错误（保留 code 供诊断层使用，避免丢失后显示伪造的错误码）
+class ApiException(
+    val code: Int?,
+    message: String,
+) : Exception(message)
 
 
 
