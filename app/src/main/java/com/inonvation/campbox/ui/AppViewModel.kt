@@ -428,6 +428,7 @@ class AppViewModel(
                     }
                     refreshBalance()
                     refreshDevices()
+                    refreshTodayWater()
                     showToast("饮水机已自动关闭并结算")
                 }
             }
@@ -446,6 +447,7 @@ class AppViewModel(
                     unlockJob = null
                     _state.update { it.copy(unlocking = false, unlockStatus = null, unlockFlowState = UnlockFlowState.Success(result), unlockElapsedSeconds = 0, unlockFlowHidden = false, orderHistory = repository.orderHistory()) }
                     refreshBalance()
+                    refreshTodayWater()
                 }.onFailure { e ->
                     unlockTimerJob?.cancel()
                     unlockTimeoutJob?.cancel()
@@ -607,6 +609,7 @@ class AppViewModel(
     fun qzxyShowLogoutConfirm() = qzxyController.showLogoutConfirm()
     fun qzxyDismissLogoutConfirm() = qzxyController.dismissLogoutConfirm()
     fun qzxyRefreshWallet() = qzxyController.refreshWallet()
+    fun qzxyLoadUseCode() = qzxyController.loadUseCode()
     fun qzxyStartScan() = qzxyController.startScan()
     fun qzxyStopScan() = qzxyController.stopScan()
     fun qzxyOnScanPermissionDenied() = qzxyController.onScanPermissionDenied()
