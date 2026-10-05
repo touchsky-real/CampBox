@@ -338,8 +338,8 @@ class AppViewModel(
             refreshBalance()
             refreshTodayWater()
         }
-        // 打开 App 时自动刷积分（签到已包含在积分任务流程里）
-        autoPointsOnLaunch()
+        // 打开 App 时自动签到（仅签到；首页浏览等积分任务仍需手动执行）
+        autoSignInOnLaunch()
         // 打开 App 时自动连接校园网
         autoCampusNetOnLaunch()
         // 恢复趣智校园登录态与进行中的洗澡订单
@@ -358,15 +358,15 @@ class AppViewModel(
     fun logout() = authController.logout()
 
     // ── 签到 ──
-    /** 启动时自动刷积分：开关开启 + 已登录 + 今日未跑过才执行，复用手动入口的全部保护 */
-    fun autoPointsOnLaunch() {
+    /** 启动时自动签到：开关开启 + 已登录 + 今日未签到才执行，复用手动签到的全部保护 */
+    fun autoSignInOnLaunch() {
         if (!state.value.autoSignInEnabled) return
         if (!state.value.hasToken) return
         // 签到标记存在两处（手动签到写 ad_video_state，积分任务写 points_task），
-        // 任一为真都视为今天已刷过——否则每次启动都会重复执行积分任务
+        // 任一为真都视为今天已签过——积分任务流程本身包含签到，无需重复请求
         if (signInRunner.isSignedInToday() || PointsTaskRunner.isPointsDoneToday(context)) return
-        if (state.value.pointsRunning) return
-        startPointsTask()
+        if (state.value.signingIn) return
+        signInNow()
     }
 
     fun signInNow() = viewModelScope.launch {
