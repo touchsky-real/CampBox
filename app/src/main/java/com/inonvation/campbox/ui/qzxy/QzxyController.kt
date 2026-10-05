@@ -75,6 +75,7 @@ class QzxyController(
         if (bound.snCode.isBlank()) return@launch
         val status = runCatching { repository.queryUsing(bound.snCode) }.getOrNull()
             ?: return@launch
+        if (status.isOwner == false) return@launch
         val orderNo = status?.orderNo?.takeIf { it.isNotBlank() } ?: return@launch
         val active = QzxyActiveShower(
             mac = bound.mac,

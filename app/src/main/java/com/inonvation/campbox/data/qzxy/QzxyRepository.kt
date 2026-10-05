@@ -6,6 +6,7 @@ import android.util.Log
 import com.inonvation.campbox.data.HttpClientProvider
 import com.inonvation.campbox.data.MoshiProvider
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.selects.select
@@ -24,12 +25,12 @@ class QzxyRepository(
 ) {
 
     private val logging = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY
+        level = HttpLoggingInterceptor.Level.NONE
     }
 
     private val api: QzxyApi = Retrofit.Builder()
         .baseUrl(QzxyApiConfig.BASE_URL)
-        .client(HttpClientProvider.client.newBuilder().addInterceptor(logging).build())
+        .client(HttpClientProvider.client.newBuilder().retryOnConnectionFailure(false).addInterceptor(logging).build())
         .addConverterFactory(MoshiConverterFactory.create(MoshiProvider.instance))
         .build()
         .create(QzxyApi::class.java)
@@ -60,6 +61,8 @@ class QzxyRepository(
         try {
             block()
         } catch (e: QzxySessionExpiredException) {
+            throw e
+        } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             null
@@ -159,7 +162,8 @@ class QzxyRepository(
         val session = requireSession()
 
         onStep("正在检查设备状态")
-        val existing = swallowErrors { queryUsing(snCode) }
+        val existing = queryUsing(snCode)
+        if (existing?.isOwner == false) error("设备正在被其他用户使用")
         if (existing?.orderNo?.isNotBlank() == true) {
             return QzxyActiveShower(
                 mac = mac,
@@ -197,7 +201,9 @@ class QzxyRepository(
         while (orderNo.isNullOrBlank() && polls < QzxyApiConfig.ORDER_POLL_MAX_ATTEMPTS) {
             onStep("正在获取订单号（${polls + 1}/${QzxyApiConfig.ORDER_POLL_MAX_ATTEMPTS}）")
             delay(QzxyApiConfig.ORDER_POLL_INTERVAL_MS)
-            orderNo = swallowErrors { queryUsing(snCode) }?.orderNo?.takeIf { it.isNotBlank() }
+            val using = swallowErrors { queryUsing(snCode) }
+            if (using?.isOwner == false) error("设备正在被其他用户使用")
+            orderNo = using?.orderNo?.takeIf { it.isNotBlank() }
             polls++
         }
         val finalOrderNo = orderNo ?: error("设备未返回订单号，请稍后重试")
@@ -227,6 +233,8 @@ class QzxyRepository(
         try {
             call { api.closeOrder(snCode = active.snCode, orderNo = orderNo, auth = session.authFields()) }
         } catch (e: QzxySessionExpiredException) {
+            throw e
+        } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             // 订单可能已被设备自动关停，继续走确认/结算
