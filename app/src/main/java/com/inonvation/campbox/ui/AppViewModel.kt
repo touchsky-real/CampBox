@@ -21,6 +21,7 @@ import com.inonvation.campbox.data.SignInRunner
 import com.inonvation.campbox.data.TaskCancelledException
 import com.inonvation.campbox.data.TokenExpiredException
 import com.inonvation.campbox.data.UnlockException
+import com.inonvation.campbox.data.UpdateChecker
 import com.inonvation.campbox.ui.auth.AuthController
 import com.inonvation.campbox.ui.qzxy.QzxyController
 import com.inonvation.campbox.ui.qzxy.QzxyUiState
@@ -41,6 +42,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed class UiEvent {
     data class Toast(val message: String) : UiEvent()
@@ -628,6 +630,30 @@ class AppViewModel(
         _state.update { it.copy(showOrderHistory = true, orderHistory = repository.orderHistory()) }
     }
     fun dismissOrderHistory() { _state.update { it.copy(showOrderHistory = false) } }
+
+    // ── 检查更新 ──
+    fun checkUpdate() {
+        if (_state.value.updateChecking) return
+        _state.update { it.copy(updateChecking = true) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = UpdateChecker.check(_state.value.appVersion)
+            withContext(Dispatchers.Main) {
+                result.fold(
+                    onSuccess = { info ->
+                        _state.update { it.copy(updateChecking = false, updateInfo = info) }
+                        if (info == null) showToast("已是最新版本")
+                    },
+                    onFailure = {
+                        _state.update { it.copy(updateChecking = false) }
+                        showToast("检查更新失败，请检查网络后重试")
+                    },
+                )
+            }
+        }
+    }
+
+    fun dismissUpdateDialog() { _state.update { it.copy(updateInfo = null) } }
+
     // ── 设置 ──
     fun showSettings() { _state.update { it.copy(showSettings = true) } }
     fun dismissSettings() { _state.update { it.copy(showSettings = false) } }

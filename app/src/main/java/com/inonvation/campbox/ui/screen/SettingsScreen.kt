@@ -2,6 +2,7 @@
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,19 +12,27 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,12 +59,13 @@ import com.inonvation.campbox.ui.theme.Spacings
 import com.inonvation.campbox.ui.theme.ThemeMode
 
 /**
- * 设置页：按 外观 / 喝水·胖乖生活 / 校园网 / 洗澡·趣智校园 / 通用 / 调试 分组，
+ * 设置页：按 关于 / 外观 / 喝水·胖乖生活 / 校园网 / 洗澡·趣智校园 / 通用 / 调试 分组，
  * 每个平台的账号管理与该平台的功能开关放在一起，调试入口集中在最后。
  */
 @Composable
 fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
     val currentMode = state.themeMode
     var showDisclaimerDialog by remember { mutableStateOf(false) }
 
@@ -105,6 +115,77 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                 .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
+            // ═══ 关于 ═══
+            SectionLabel("关于")
+            Spacer(Modifier.height(Spacings.sm))
+            StandardCard {
+                Column {
+                    // 版本行：点击右侧箭头跳转官网
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, AndroidUri.parse(REPO_URL)),
+                                )
+                            },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("版本", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "CampBox v${state.appVersion}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                                contentDescription = "前往官网",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(12.dp))
+                    // 检查更新行
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                vm.checkUpdate()
+                            },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("检查更新", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text(
+                                if (state.updateChecking) "正在检查更新…" else "获取最新版本与下载地址",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (state.updateChecking) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(
+                                Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(Spacings.lg))
+
             // ═══ 外观 ═══
             SectionLabel("外观")
             Spacer(Modifier.height(Spacings.sm))
@@ -262,33 +343,6 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                     Spacer(Modifier.height(12.dp))
                     HorizontalDivider()
                     Spacer(Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "版本",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f),
-                        )
-                        val context = LocalContext.current
-                        Text(
-                            "CampBox v${state.appVersion}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, AndroidUri.parse(REPO_URL)),
-                                )
-                            },
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(12.dp))
                     AboutLink(
                         title = "免责声明",
                         subtitle = "使用即代表同意以下条款",
@@ -341,6 +395,47 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                 "本人概不承担因此产生的任何责任。"
             ),
             onDismiss = { showDisclaimerDialog = false }
+        )
+    }
+
+    // 发现新版本弹窗：展示更新说明，确认后经国内镜像下载
+    state.updateInfo?.let { info ->
+        AlertDialog(
+            onDismissRequest = vm::dismissUpdateDialog,
+            title = { Text("发现新版本 v${info.version}") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        info.notes.ifBlank { "暂无更新说明" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (info.downloadUrl.isBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "未找到 APK 附件，请前往发布页手动下载",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.dismissUpdateDialog()
+                    val target = info.downloadUrl.ifBlank { info.releaseUrl }
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, AndroidUri.parse(target)))
+                    }
+                }) { Text("立即更新") }
+            },
+            dismissButton = {
+                TextButton(onClick = vm::dismissUpdateDialog) { Text("下次再说") }
+            },
         )
     }
 }

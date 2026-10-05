@@ -5,6 +5,7 @@ import com.inonvation.campbox.data.DeviceItem
 import com.inonvation.campbox.data.OrderHistoryItem
 import com.inonvation.campbox.data.QuickLink
 import com.inonvation.campbox.data.UnlockResult
+import com.inonvation.campbox.data.UpdateInfo
 import com.inonvation.campbox.ui.theme.ColorTheme
 import com.inonvation.campbox.ui.theme.ThemeMode
 import com.inonvation.campbox.ui.qzxy.QzxyUiState
@@ -98,6 +99,10 @@ data class AppUiState(
 
     // ── 淋浴（趣智校园，独立账号与状态）──
     val qzxy: QzxyUiState = QzxyUiState(),
+
+    // ── 检查更新 ──
+    val updateChecking: Boolean = false,
+    val updateInfo: UpdateInfo? = null,
 
     // ── 全局 ──
     val appVersion: String = "",
