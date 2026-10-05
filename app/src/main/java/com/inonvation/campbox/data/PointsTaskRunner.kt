@@ -340,7 +340,6 @@ class PointsTaskRunner(
             .add("Content-Type", ApiConfig.CONTENT_TYPE)
             .add("Host", "userapi.qiekj.com")
             .add("Connection", "Keep-Alive")
-            .add("Accept-Encoding", "gzip")
             .add("User-Agent", userAgent)
             .build()
     }
