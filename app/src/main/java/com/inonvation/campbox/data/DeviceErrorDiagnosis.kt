@@ -58,7 +58,9 @@ object DeviceErrorDiagnosis {
                 )
 
             // 网络异常
-            msg.contains("timeout") || msg.contains("超时") || msg.contains("连接") && msg.contains("失败") ->
+            msg.contains("unable to resolve host") || msg.contains("unknownhost") ||
+                msg.contains("no address associated") || msg.contains("failed to connect") ||
+                msg.contains("timeout") || msg.contains("超时") || msg.contains("连接") && msg.contains("失败") ->
                 "网络连接异常" to listOf(
                     "检查手机网络连接",
                     "切换 Wi-Fi 或移动数据后重试",

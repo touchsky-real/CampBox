@@ -9,6 +9,11 @@ data class ApiEnvelope<T>(
     val data: T? = null,
 ) {
     fun requireData(): T {
+        if (code != null && code != 0 && code != 200) {
+            val reason = message ?: msg ?: "请求失败"
+            if (TokenExpiredException.isTokenExpired(code, reason)) throw TokenExpiredException(reason)
+            throw ApiException(code, reason)
+        }
         if (data != null) return data
         val rawMsg = message ?: msg ?: "接口未返回 data"
         if (TokenExpiredException.isTokenExpired(code, rawMsg)) {
@@ -87,6 +92,7 @@ data class UnlockResult(
     val completedAt: Long,
     // 非空表示出水成功但账单环节降级（费用以官方账单为准），UI 据此显示提示而非报错
     val note: String? = null,
+    val usageConfirmed: Boolean = true,
 )
 
 // 服务端业务错误（保留 code 供诊断层使用，避免丢失后显示伪造的错误码）
@@ -106,6 +112,8 @@ data class OrderHistoryItem(
     val integralCost: String,
     val otherPromotions: List<PromotionItem>,
     val completedAt: Long,
+    val usageConfirmed: Boolean = true,
+    val note: String? = null,
 ) {
     fun toUnlockResult(): UnlockResult = UnlockResult(
         orderNo = orderNo,
@@ -115,6 +123,8 @@ data class OrderHistoryItem(
         integralCost = integralCost,
         otherPromotions = otherPromotions,
         completedAt = completedAt,
+        usageConfirmed = usageConfirmed,
+        note = note,
     )
 }
 

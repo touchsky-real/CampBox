@@ -8,6 +8,24 @@ import org.junit.Test
 
 class ModelsTest {
 
+    @Test(expected = ApiException::class)
+    fun apiEnvelope_failureWithData_mustNotBeTreatedAsSuccess() {
+        ApiEnvelope(code = 500, msg = "服务异常", data = "placeholder").requireData()
+    }
+
+    @Test(expected = TokenExpiredException::class)
+    fun apiEnvelope_expiredWithData_stillRequiresLogin() {
+        ApiEnvelope(code = 401, msg = "token expired", data = "placeholder").requireData()
+    }
+
+    @Test
+    fun pendingHistory_preservesConfirmationStateAndNote() {
+        val item = OrderHistoryItem("NO", "", "饮水机", "-", "-", "-", emptyList(), 1L,
+            usageConfirmed = false, note = "网络中断，待确认")
+        assertEquals(false, item.toUnlockResult().usageConfirmed)
+        assertEquals(item.note, item.toUnlockResult().note)
+    }
+
     @Test
     fun balanceData_ticketText_parsesCents() {
         val balance = BalanceData(tokenCoin = "1234", integral = "500", integralAmount = "5.00")

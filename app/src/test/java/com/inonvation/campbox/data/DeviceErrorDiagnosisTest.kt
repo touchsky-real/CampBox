@@ -7,6 +7,14 @@ import org.junit.Test
 class DeviceErrorDiagnosisTest {
 
     @Test
+    fun diagnose_dnsError_returnsNetworkAdvice() {
+        val result = DeviceErrorDiagnosis.diagnose(null,
+            "Unable to resolve host userapi.qiekj.com: No address associated with hostname", "设备状态轮询")
+        assertEquals("网络连接异常", result.primaryReason)
+        assertTrue(result.rawError.contains("Unable to resolve host"))
+    }
+
+    @Test
     fun diagnose_integralRisk_returnsCertificationAdvice() {
         val result = DeviceErrorDiagnosis.diagnose(33001, "积分风控拦截", "积分风控检查")
         assertEquals("积分使用权限未开通", result.primaryReason)

@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircleOutline
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -170,11 +171,11 @@ private fun OrderCard(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Status icon (always success since completed orders)
+            // 未确认的订单不能显示已完成图标。
             Icon(
-                Icons.Outlined.CheckCircleOutline,
+                if (item.usageConfirmed) Icons.Outlined.CheckCircleOutline else Icons.Outlined.Info,
                 contentDescription = null,
-                tint = LogColors.success,
+                tint = if (item.usageConfirmed) LogColors.success else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(16.dp)
             )
             Spacer(Modifier.width(Spacings.sm))
@@ -187,7 +188,7 @@ private fun OrderCard(
             )
             // Price
             Text(
-                text = "¥${item.originPrice}",
+                text = if (!item.usageConfirmed) "状态待确认" else if (item.originPrice == "-") "账单待确认" else "¥${item.originPrice}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(end = 4.dp)
@@ -216,6 +217,7 @@ private fun OrderCard(
                 // Detail rows
                 DetailRow("时间", dateFormat.format(Date(item.completedAt)))
                 DetailRow("订单号", item.orderNo)
+                item.note?.let { DetailRow("说明", it) }
                 DetailRow("原价", item.originPrice)
                 DetailRow("小票", item.ticketCost)
                 DetailRow("积分", item.integralCost)

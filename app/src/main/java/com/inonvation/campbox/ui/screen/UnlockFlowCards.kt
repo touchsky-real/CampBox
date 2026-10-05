@@ -112,9 +112,9 @@ internal fun InlineWorking(step: String, elapsed: Int) {
         )
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("正在出水", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
+            Text("正在确认状态", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.weight(1f))
-            Text("${remaining} 秒后自动关闭", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("最多再等待 ${remaining} 秒", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (step.isNotBlank()) {
             Spacer(Modifier.height(2.dp))
@@ -239,6 +239,11 @@ internal fun InlineUnlockStatus(
         is UnlockFlowState.PreChecking -> InlinePreChecking(step = flowState.step)
         is UnlockFlowState.Working -> InlineWorking(step = flowState.step, elapsed = elapsedSeconds)
         is UnlockFlowState.Success -> InlineSuccess(result = flowState.result, onShowDetail = onShowDetail)
+        is UnlockFlowState.Pending -> Column(modifier = Modifier.padding(16.dp)) {
+            Text("状态待确认", color = MaterialTheme.colorScheme.primary)
+            Text(flowState.result.note.orEmpty(), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = onShowDetail) { Text("查看订单") }
+        }
         is UnlockFlowState.Failed -> InlineFailed(message = flowState.message, onShowDetail = onShowDetail)
         is UnlockFlowState.Idle -> {}
     }

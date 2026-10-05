@@ -311,7 +311,6 @@ class AppViewModel(
 
     private var pendingShortcutRequest: DeviceShortcutRequest? = null
     private var unlockTimerJob: Job? = null
-    private var unlockTimeoutJob: Job? = null
 
     // ── Init ──
     init {
@@ -355,7 +354,11 @@ class AppViewModel(
     fun loginWithToken() = authController.loginWithToken()
     fun sendCode() = authController.sendCode()
     fun login() = authController.login()
-    fun logout() = authController.logout()
+    fun logout() {
+        unlockJob?.cancel()
+        authController.logout()
+        _state.update { it.copy(unlocking = false, unlockElapsedSeconds = 0) }
+    }
 
     // ── 签到 ──
     /** 启动时自动签到：开关开启 + 已登录 + 今日未签到才执行，复用手动签到的全部保护 */
@@ -384,6 +387,7 @@ class AppViewModel(
             refreshBalance()
         }.onFailure { e ->
             _state.update { it.copy(signingIn = false) }
+            if (e is CancellationException) throw e
             if (e is TokenExpiredException) {
                 authController.handleTokenExpired()
             } else {
@@ -394,6 +398,7 @@ class AppViewModel(
 
     // ── 设备 / 余额 ──
     private fun handleApiError(error: Throwable, fallbackMessage: String = "操作失败"): Boolean {
+        if (error is CancellationException) throw error
         return if (error is TokenExpiredException) {
             authController.handleTokenExpired()
             true
@@ -421,7 +426,8 @@ class AppViewModel(
         }
     }
 
-    fun refreshBalance() = viewModelScope.launch {
+    fun refreshBalance(silent: Boolean = false) = viewModelScope.launch {
+        if (state.value.loadingBalance) return@launch
         if (!state.value.hasToken) return@launch
         runCatching {
             _state.update { it.copy(loadingBalance = true) }
@@ -430,99 +436,123 @@ class AppViewModel(
             _state.update { it.copy(balance = balance, loadingBalance = false) }
         }.onFailure {
             _state.update { it.copy(loadingBalance = false) }
-            handleApiError(it, "查询资产失败")
+            if (it is CancellationException) throw it
+            if (!silent || it is TokenExpiredException) handleApiError(it, "查询资产失败")
         }
     }
 
     // ── 解锁 ──
-    fun unlock(device: DeviceItem) = viewModelScope.launch {
-        if (state.value.unlocking) return@launch
-        if (!unlockMutex.tryLock()) return@launch
+    fun resolveWaterCode(raw: String) = viewModelScope.launch {
+        if (state.value.waterScanLoading || state.value.unlocking) return@launch
+        if (!state.value.hasToken) {
+            showError("请先登录胖乖账号")
+            return@launch
+        }
+        _state.update { it.copy(waterScanLoading = true, scannedWaterDevice = null, waterScanError = null) }
         try {
-            _state.update {
-                it.copy(unlocking = true, unlockingDeviceId = device.goodsName.ifBlank { device.id }, unlockStatus = "准备解锁", unlockFlowState = UnlockFlowState.PreChecking(), unlockElapsedSeconds = 0, unlockFlowHidden = false)
+            val device = repository.resolveWaterCode(raw)
+            if (state.value.hasToken) _state.update { it.copy(scannedWaterDevice = device) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: com.inonvation.campbox.data.WaterScanException) {
+            _state.update { it.copy(waterScanError = "${e.message}\n\n步骤：${e.step}\n错误码：${e.serverCode ?: "未知"}\n接口协议：${ApiConfig.VERSION} / ${ApiConfig.VERSION_CODE}") }
+        } catch (e: Exception) {
+            handleApiError(e, "识别设备失败，请重新扫描")
+        } finally {
+            _state.update { it.copy(waterScanLoading = false) }
+        }
+    }
+
+    fun dismissScannedWaterDevice() {
+        _state.update { it.copy(scannedWaterDevice = null) }
+    }
+
+    fun dismissWaterScanError() {
+        _state.update { it.copy(waterScanError = null) }
+    }
+
+    fun selectScannedWaterDevice() {
+        val device = state.value.scannedWaterDevice ?: return
+        _state.update { it.copy(scannedWaterDevice = null,
+            devices = listOf(device) + it.devices.filterNot { existing ->
+                (existing.goodsId ?: existing.id) == device.goodsId
+            }) }
+    }
+
+    fun unlock(device: DeviceItem) = viewModelScope.launch {
+        if (state.value.waterScanLoading || state.value.unlocking || !unlockMutex.tryLock()) return@launch
+        try {
+            if (!state.value.hasToken) {
+                showError("请先登录")
+                return@launch
             }
-            unlockTimerJob?.cancel()
-            unlockTimerJob = viewModelScope.launch {
+            unlockJob = coroutineContext[Job]
+            _state.update {
+                it.copy(unlocking = true, unlockingDeviceId = device.goodsName.ifBlank { device.id },
+                    unlockStatus = "准备解锁", unlockFlowState = UnlockFlowState.PreChecking(),
+                    unlockElapsedSeconds = 0, unlockFlowHidden = false)
+            }
+            unlockTimerJob = launch {
                 while (isActive) {
                     delay(1000)
-                    // 直接累加全局秒数；Working 卡片展示时用 165 - elapsed 计算剩余
-                    if (state.value.unlockFlowState is UnlockFlowState.Working) {
-                        _state.update { it.copy(unlockElapsedSeconds = state.value.unlockElapsedSeconds + 1) }
-                    }
-                }
-            }
-            unlockTimeoutJob?.cancel()
-            unlockTimeoutJob = viewModelScope.launch {
-                delay(165_000)
-                if (state.value.unlockFlowState is UnlockFlowState.Working) {
-                    // 兜底：165 秒到点设备仍未上报结束，视为平台已自动关阀结算，结束前台等待
-                    unlockJob?.cancel()
                     _state.update {
-                        it.copy(
-                            unlocking = false,
-                            unlockStatus = null,
-                            unlockFlowState = UnlockFlowState.Idle,
-                            unlockElapsedSeconds = 0,
-                            unlockFlowHidden = false,
-                            unlockingDeviceId = null,
-                            orderHistory = repository.orderHistory(),
-                        )
+                        if (it.unlockFlowState is UnlockFlowState.Working)
+                            it.copy(unlockElapsedSeconds = it.unlockElapsedSeconds + 1) else it
                     }
-                    refreshBalance()
-                    refreshDevices()
-                    refreshTodayWater()
-                    showToast("饮水机已自动关闭并结算")
                 }
             }
-            unlockJob = viewModelScope.launch {
-                runCatching {
-                    repository.unlockDevice(device, usePoints = state.value.usePointsForUnlock) { step ->
-                        val isWorking = step.contains("等待") || step.contains("设备工作") ||
-                            step.contains("创建后付") || step.contains("查询订单")
-                        _state.update {
-                            it.copy(unlockStatus = step, unlockFlowState = if (isWorking) UnlockFlowState.Working(step, state.value.unlockElapsedSeconds) else UnlockFlowState.PreChecking(step))
-                        }
-                    }
-                }.onSuccess { result ->
-                    unlockTimerJob?.cancel()
-                    unlockTimeoutJob?.cancel()
-                    unlockJob = null
-                    _state.update { it.copy(unlocking = false, unlockStatus = null, unlockFlowState = UnlockFlowState.Success(result), unlockElapsedSeconds = 0, unlockFlowHidden = false, orderHistory = repository.orderHistory()) }
-                    refreshBalance()
-                    refreshTodayWater()
-                }.onFailure { e ->
-                    unlockTimerJob?.cancel()
-                    unlockTimeoutJob?.cancel()
-                    unlockJob = null
-                    // 165 秒兜底主动取消轮询时不算失败，状态已由超时处理器收尾
-                    if (e is kotlinx.coroutines.CancellationException) return@launch
-                    if (e is TokenExpiredException) {
-                        _state.update { it.copy(unlocking = false, unlockStatus = null, unlockFlowState = UnlockFlowState.Idle, unlockElapsedSeconds = 0, unlockFlowHidden = false) }
-                        authController.handleTokenExpired()
-                        return@launch
-                    }
-                    val diag = if (e is UnlockException) e.diagnosis else null
-                    val failState = if (diag != null) UnlockFlowState.Failed(diag.primaryReason, diag.step, diag.rawError, diag.suggestions)
-                        else UnlockFlowState.Failed(e.message ?: "未知错误", "未知", e.message ?: "")
-                    _state.update { it.copy(unlocking = false, unlockStatus = null, unlockFlowState = failState, unlockElapsedSeconds = 0, unlockFlowHidden = false) }
+            val result = repository.unlockDevice(
+                device, usePoints = state.value.usePointsForUnlock,
+                onStarted = {
+                    _state.update { it.copy(unlockFlowState = UnlockFlowState.Working("开水指令已受理")) }
+                },
+            ) { step ->
+                _state.update {
+                    it.copy(unlockStatus = step,
+                        unlockFlowState = if (it.unlockFlowState is UnlockFlowState.Working)
+                            UnlockFlowState.Working(step, it.unlockElapsedSeconds)
+                        else UnlockFlowState.PreChecking(step))
                 }
             }
+            val history = repository.orderHistory()
+            _state.update {
+                it.copy(unlockStatus = null,
+                    unlockFlowState = if (result.usageConfirmed) UnlockFlowState.Success(result)
+                        else UnlockFlowState.Pending(result),
+                    unlockElapsedSeconds = 0, unlockFlowHidden = false, orderHistory = history,
+                    totalWaterCount = history.count { order -> order.usageConfirmed })
+            }
+            refreshBalance(silent = true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: TokenExpiredException) {
+            _state.update { it.copy(unlockFlowState = UnlockFlowState.Idle, unlockStatus = null) }
+            authController.handleTokenExpired()
+        } catch (e: Exception) {
+            val diag = (e as? UnlockException)?.diagnosis
+            val failure = if (diag != null)
+                UnlockFlowState.Failed(diag.primaryReason, diag.step, diag.rawError, diag.suggestions)
+            else UnlockFlowState.Failed(friendlyErrorMessage(e.message ?: "未知错误"), "未知", e.message ?: "")
+            _state.update { it.copy(unlockStatus = null, unlockFlowState = failure, unlockFlowHidden = false) }
         } finally {
+            unlockTimerJob?.cancel()
+            unlockJob = null
+            _state.update { it.copy(unlocking = false, unlockElapsedSeconds = 0) }
             unlockMutex.unlock()
         }
     }
 
     fun dismissUnlockFlow() {
-        unlockTimerJob?.cancel()
-        unlockTimeoutJob?.cancel()
+        if (state.value.unlocking) {
+            dismissUnlockAnimation()
+            return
+        }
         _state.update { it.copy(unlockFlowState = UnlockFlowState.Idle, unlockElapsedSeconds = 0, unlockingDeviceId = null) }
     }
 
     fun dismissUnlockAnimation() {
-        unlockTimerJob?.cancel()
-        unlockTimeoutJob?.cancel()
-        _state.update { it.copy(unlockFlowHidden = true, unlockElapsedSeconds = 0) }
+        // 隐藏界面不能取消后台状态确认或改变计时。
+        _state.update { it.copy(unlockFlowHidden = true) }
     }
 
     fun openDeviceShortcut(request: DeviceShortcutRequest) {
@@ -669,7 +699,8 @@ class AppViewModel(
 
     // ── 统计 ──
     fun refreshTodayWater() {
-        _state.update { it.copy(totalWaterCount = repository.orderHistory().size) }
+        val count = repository.orderHistory().count { it.usageConfirmed }
+        _state.update { it.copy(totalWaterCount = count) }
     }
 
     fun showOrderHistory() {
@@ -746,7 +777,6 @@ class AppViewModel(
     // ── Lifecycle ──
     override fun onCleared() {
         unlockTimerJob?.cancel()
-        unlockTimeoutJob?.cancel()
         super.onCleared()
     }
 }

@@ -1,12 +1,27 @@
 ﻿package com.inonvation.campbox.data
 
 import retrofit2.http.Field
+import retrofit2.http.FieldMap
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.HeaderMap
 import retrofit2.http.Header
 import retrofit2.http.POST
 
 interface DeviceApi {
+    @FormUrlEncoded
+    @POST("goods/scan/v2")
+    suspend fun scanDevice(
+        @FieldMap code: Map<String, String>,
+        @Field("token") token: String,
+    ): ApiEnvelope<WaterScanData>
+
+    @FormUrlEncoded
+    @POST("goods/normal/details")
+    suspend fun waterDeviceDetails(
+        @Field("goodsId") goodsId: String,
+        @Field("token") token: String,
+    ): ApiEnvelope<WaterDeviceDetails>
+
     @FormUrlEncoded
     @POST("common/sms/sendCode")
     suspend fun sendCode(

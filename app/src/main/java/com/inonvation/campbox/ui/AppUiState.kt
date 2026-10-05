@@ -21,6 +21,7 @@ sealed class UnlockFlowState {
     data class PreChecking(val step: String = "正在准备…") : UnlockFlowState()
     data class Working(val step: String, val elapsedSeconds: Int = 0) : UnlockFlowState()
     data class Success(val result: UnlockResult) : UnlockFlowState()
+    data class Pending(val result: UnlockResult) : UnlockFlowState()
     data class Failed(
         val message: String,
         val step: String,
@@ -44,6 +45,9 @@ data class AppUiState(
 
     // ── 设备 ──
     val loadingDevices: Boolean = false,
+    val waterScanLoading: Boolean = false,
+    val waterScanError: String? = null,
+    val scannedWaterDevice: DeviceItem? = null,
     val loadingBalance: Boolean = false,
     val devices: List<DeviceItem> = emptyList(),
     val balance: BalanceData? = null,

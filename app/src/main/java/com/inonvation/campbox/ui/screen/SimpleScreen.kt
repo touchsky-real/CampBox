@@ -260,6 +260,33 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
         }
     }
 
+    state.waterScanError?.let { message ->
+        AlertDialog(
+            onDismissRequest = vm::dismissWaterScanError,
+            title = { Text("扫码识别失败") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = vm::dismissWaterScanError) { Text("知道了") } },
+        )
+    }
+
+    state.scannedWaterDevice?.let { device ->
+        AlertDialog(
+            onDismissRequest = vm::dismissScannedWaterDevice,
+            title = { Text("识别到饮水机") },
+            text = { Text("${device.goodsName}\n\n选择后，点首页「开水」即可使用。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    selectedDevice = device
+                    vm.selectScannedWaterDevice()
+                    vm.dismissUnlockFlow()
+                }) { Text("选择这台设备") }
+            },
+            dismissButton = {
+                TextButton(onClick = vm::dismissScannedWaterDevice) { Text("取消") }
+            },
+        )
+    }
+
     // 开水设备选择弹层
     if (showDeviceSheet) {
         WaterDeviceSheet(
@@ -276,14 +303,19 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
     }
 
     // 开水成功详情弹窗（点"订单详情"查看）
-    val successResult = (state.unlockFlowState as? UnlockFlowState.Success)?.result
+    val successResult = when (val flow = state.unlockFlowState) {
+        is UnlockFlowState.Success -> flow.result
+        is UnlockFlowState.Pending -> flow.result
+        else -> null
+    }
     if (successResult != null && showWaterDetail) {
         AlertDialog(
             onDismissRequest = { showWaterDetail = false },
-            title = { Text("开水成功", fontWeight = FontWeight.SemiBold) },
+            title = { Text(if (successResult.usageConfirmed) "使用已结束" else "状态待确认", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
-                    DetailRow("订单原价", "¥${successResult.originPrice}")
+                    successResult.note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    DetailRow("订单原价", if (successResult.originPrice == "-") "待确认" else "¥${successResult.originPrice}")
                     DetailRow("花费小票", successResult.ticketCost)
                     if (successResult.integralCost != "-") DetailRow("积分抵扣", successResult.integralCost)
                     successResult.otherPromotions.forEach { p ->
@@ -337,7 +369,7 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(6.dp))
-                    Text("• 新饮水机需先在官方 App 扫描机身二维码登记一次，之后才会出现在这里。", style = MaterialTheme.typography.bodySmall)
+                    Text("• 新设备可点首页「扫码喝水」，扫描机身上的胖乖二维码，识别并选择后再点「开水」。", style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(4.dp))
                     Text("• 开水为「后付费」，需先在官方 App 开通支付宝免密支付，否则会在「开通后付」步骤报错。", style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(4.dp))
@@ -407,7 +439,7 @@ private fun AccountStripRow(state: AppUiState, vm: AppViewModel, haptic: HapticF
     }
 }
 
-private enum class WaterPhase { Idle, Busy, Success, Failed }
+private enum class WaterPhase { Idle, Busy, Success, Pending, Failed }
 
 /** 开水卡：与洗澡卡统一骨架（设备行 / 状态区 / 按钮行） */
 @Composable
@@ -426,6 +458,7 @@ private fun WaterCard(
     val phase = when (flow) {
         is UnlockFlowState.Idle -> WaterPhase.Idle
         is UnlockFlowState.Success -> WaterPhase.Success
+        is UnlockFlowState.Pending -> WaterPhase.Pending
         is UnlockFlowState.Failed -> WaterPhase.Failed
         else -> WaterPhase.Busy
     }
@@ -438,65 +471,56 @@ private fun WaterCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Column(modifier = Modifier.padding(Spacings.lg)) {
-            // ── 行1 设备行（右端含 info 图标说明使用前提） ──
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(deviceName, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                IconButton(
-                    onClick = {
-                        if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onShowHelp()
-                    },
-                    modifier = Modifier.size(28.dp),
-                ) {
-                    Icon(
-                        Icons.Outlined.Info,
-                        contentDescription = "开水说明",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    )
-                }
-                if (state.devices.isNotEmpty()) {
-                    // 选择设备的下拉箭头，参与设备行点击
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(enabled = phase == WaterPhase.Idle) { onPickDevice() }
-                            .padding(4.dp),
-                    ) {
-                        if (phase == WaterPhase.Idle) {
-                            Icon(
-                                Icons.Outlined.KeyboardArrowDown,
-                                contentDescription = "选择设备",
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+            // 设备选择和说明分别点击，使用过程中仍可查看说明。
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(enabled = state.devices.isNotEmpty() && phase == WaterPhase.Idle) {
+                            if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onPickDevice()
                         }
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(deviceName, style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    if (state.devices.isNotEmpty()) {
+                        Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "选择设备",
+                            modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                } else {
-                    Spacer(Modifier.width(Spacings.xs))
-                    Text(
-                        "刷新",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable { vm.refreshDevices() },
-                    )
+                }
+                if (state.devices.isEmpty()) {
+                    TextButton(onClick = { vm.refreshDevices() }) { Text("刷新") }
+                }
+                IconButton(onClick = {
+                    if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onShowHelp()
+                }) {
+                    Icon(Icons.Outlined.Info, contentDescription = "开水说明",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
             // ── 行2 状态区（原地切换，带过渡动画） ──
             Column(modifier = Modifier.fillMaxWidth().animateContentSize()) {
                 AnimatedContent(
-                    targetState = phase,
+                    targetState = flow,
+                    contentKey = { it::class },
                     transitionSpec = {
                         (fadeIn(tween(180)) + slideInVertically(tween(180)) { it / 8 })
                             .togetherWith(fadeOut(tween(140)))
                     },
                     label = "waterInfo",
-                ) { p ->
+                ) { contentFlow ->
+                    // 动画退出帧仍持有旧状态，必须读取动画提供的快照，避免强转到新状态时崩溃。
+                    val p = when (contentFlow) {
+                        is UnlockFlowState.Idle -> WaterPhase.Idle
+                        is UnlockFlowState.Success -> WaterPhase.Success
+                        is UnlockFlowState.Pending -> WaterPhase.Pending
+                        is UnlockFlowState.Failed -> WaterPhase.Failed
+                        else -> WaterPhase.Busy
+                    }
                     Column(modifier = Modifier.padding(top = Spacings.md)) {
                         when (p) {
                             WaterPhase.Idle -> Row(
@@ -532,7 +556,7 @@ private fun WaterCard(
                                     CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                                     Spacer(Modifier.width(8.dp))
                                     Text(
-                                        when (val f = state.unlockFlowState) {
+                                        when (val f = contentFlow) {
                                             is UnlockFlowState.PreChecking -> f.step
                                             is UnlockFlowState.Working -> f.step
                                             else -> "正在处理…"
@@ -543,16 +567,14 @@ private fun WaterCard(
                                 }
                             }
                             WaterPhase.Success -> {
-                                // 必须安全转换：AnimatedContent 退场动画期间状态可能已经变了
-                                // （如点了「完成」回到 Idle），退场内容重组时再强转会直接崩溃
-                                val r = (state.unlockFlowState as? UnlockFlowState.Success)?.result
+                                val r = (contentFlow as? UnlockFlowState.Success)?.result
                                     ?: return@AnimatedContent
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                 ) {
                                     Text(
-                                        r.ticketCost.ifBlank { "¥${r.originPrice}" },
+                                        if (r.originPrice == "-") "账单待确认" else "¥${com.inonvation.campbox.data.calculateActualCost(r)}",
                                         style = MaterialTheme.typography.headlineSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary,
@@ -570,9 +592,17 @@ private fun WaterCard(
                                     }
                                 }
                             }
+                            WaterPhase.Pending -> {
+                                val result = (contentFlow as UnlockFlowState.Pending).result
+                                Column {
+                                    Text("状态待确认", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                                    Text(result.note.orEmpty(), style = MaterialTheme.typography.bodySmall)
+                                    Text("请勿重复开水；订单已保留，可在胖乖生活核对。", style = MaterialTheme.typography.bodySmall)
+                                    TextButton(onClick = onShowDetail) { Text("查看订单") }
+                                }
+                            }
                             WaterPhase.Failed -> {
-                                // 同上：退场动画期间状态可能已变，强转会崩溃
-                                val f = state.unlockFlowState as? UnlockFlowState.Failed ?: return@AnimatedContent
+                                val f = contentFlow as? UnlockFlowState.Failed ?: return@AnimatedContent
                                 Column(modifier = Modifier.fillMaxWidth()) {
                                     Text(f.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                                     Spacer(Modifier.height(4.dp))
@@ -600,17 +630,25 @@ private fun WaterCard(
             // ── 行3 按钮行 ──
             Spacer(Modifier.height(Spacings.md))
             when (phase) {
-                WaterPhase.Idle -> Button(
-                    onClick = {
-                        if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        val device = selectedDevice
-                        if (device != null) vm.unlock(device)
-                    },
-                    enabled = selectedDevice != null && !state.unlocking,
-                    modifier = Modifier.fillMaxWidth().height(44.dp),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Text("开水", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                WaterPhase.Idle -> Row(horizontalArrangement = Arrangement.spacedBy(Spacings.sm)) {
+                    WaterScanButton(
+                        enabled = !state.unlocking,
+                        loading = state.waterScanLoading,
+                        onCode = { vm.resolveWaterCode(it) },
+                        modifier = Modifier.weight(1f).height(44.dp),
+                    )
+                    Button(
+                        onClick = {
+                            if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            val device = selectedDevice
+                            if (device != null) vm.unlock(device)
+                        },
+                        enabled = selectedDevice != null && !state.unlocking && !state.waterScanLoading,
+                        modifier = Modifier.weight(1f).height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("开水", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    }
                 }
                 WaterPhase.Busy -> Button(
                     onClick = {},
@@ -620,12 +658,12 @@ private fun WaterCard(
                 ) {
                     Text("开水进行中…", style = MaterialTheme.typography.titleSmall)
                 }
-                WaterPhase.Success -> OutlinedButton(
+                WaterPhase.Success, WaterPhase.Pending -> OutlinedButton(
                     onClick = { vm.dismissUnlockFlow() },
                     modifier = Modifier.fillMaxWidth().height(44.dp),
                     shape = RoundedCornerShape(10.dp),
                 ) {
-                    Text("完成")
+                    Text(if (phase == WaterPhase.Pending) "知道了" else "完成")
                 }
                 WaterPhase.Failed -> Row(modifier = Modifier.fillMaxWidth()) {
                     Button(
@@ -672,7 +710,13 @@ private fun WaterDeviceSheet(
                 .padding(horizontal = Spacings.xl)
                 .padding(bottom = Spacings.xxl),
         ) {
-            Text("选择开水设备", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("选择开水设备", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            }
             Text(
                 "点选切换设备；长按或点右侧 ＋ 可添加到桌面",
                 style = MaterialTheme.typography.bodySmall,
@@ -745,6 +789,7 @@ private fun WaterDeviceSheet(
 }
 
 private fun successSubtitle(r: com.inonvation.campbox.data.UnlockResult): String {
+    if (r.originPrice == "-") return "使用已结束，费用以官方账单为准"
     val parts = buildList {
         if (r.integralCost != "-") add("积分抵扣 ${r.integralCost}")
         r.otherPromotions.forEach { p -> p.discountAmount?.let { add("其他优惠 $it") } }

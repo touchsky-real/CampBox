@@ -1,6 +1,7 @@
 ﻿package com.inonvation.campbox.data
 
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
@@ -22,6 +23,7 @@ class AppRepository(
         val client = HttpClientProvider.client.newBuilder()
             .addInterceptor(HeaderInterceptor({ tokenStore.readToken() }, deviceIdProvider))
             .addInterceptor(logging)
+            .retryOnConnectionFailure(false)
             .build()
         api = Retrofit.Builder()
             .baseUrl(ApiConfig.BASE_URL)
@@ -65,9 +67,31 @@ class AppRepository(
         return resp.data ?: emptyList()
     }
 
+    /** 扫码只识别设备；确认设备后仍由现有开水流程处理位置、积分和订单。 */
+    suspend fun resolveWaterCode(raw: String): DeviceItem {
+        val code = parseWaterDeviceCode(raw) ?: error("未识别到胖乖设备码，请扫描饮水机上的二维码")
+        val token = requireToken()
+        val scan = try {
+            api.scanDevice(mapOf(code.type to code.value), token).requireData()
+        } catch (e: ApiException) {
+            throw WaterScanException("识别二维码（goods/scan/v2）", e.code, e.message ?: "识别失败")
+        }
+        val id = scan.id?.takeIf { it.isNotBlank() } ?: error("平台未返回设备编号，请重新扫描")
+        if (!scan.categoryCode.isNullOrBlank() && scan.categoryCode != "04") {
+            error("这不是胖乖饮水机二维码，请扫描饮水机机身上的设备码")
+        }
+        val details = try {
+            api.waterDeviceDetails(id, token).requireData()
+        } catch (e: ApiException) {
+            throw WaterScanException("获取设备详情（goods/normal/details）", e.code, e.message ?: "详情查询失败")
+        }
+        return scannedWaterDevice(scan, details)
+    }
+
     suspend fun unlockDevice(
         device: DeviceItem,
         usePoints: Boolean = true,
+        onStarted: suspend () -> Unit = {},
         onStep: suspend (String) -> Unit,
     ): UnlockResult {
         val token = requireToken()
@@ -84,7 +108,15 @@ class AppRepository(
             onStep("正在检测设备状态")
             currentStep = "设备预检"
             // 预检失败不阻断流程
-            runCatching { api.syncWater(skuId = skuId, token = token) }
+            try {
+                api.syncWater(skuId = skuId, token = token).throwIfFailed()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: TokenExpiredException) {
+                throw e
+            } catch (_: Exception) {
+                // 只忽略预检失败，取消和登录失效必须继续上抛。
+            }
 
             onStep("正在获取 IMEI")
             currentStep = "获取 IMEI"
@@ -135,79 +167,56 @@ class AppRepository(
                 }
             }
 
-        val orderNo = unlock.orderNo ?: error("未获取到订单号")
-        onStep("设备已启动，等待使用结束")
-
-        delay(2000)
-
-        var lastStatus: SyncData
-        var pollAttempts = 0
-        var everWorked = false
-        val maxPollAttempts = 300
-        do {
-            lastStatus = runCatching {
+        val orderNo = unlock.orderNo?.takeIf { it.isNotBlank() } ?: error("未获取到订单号")
+        // 接到订单号立即落盘，即使 App 被关闭，也保留一条明确标记为待确认的记录。
+        savePendingWater(device, orderNo, "开水指令已受理，使用与账单状态待确认")
+        onStarted()
+        onStep("开水指令已受理，正在确认设备状态")
+        currentStep = "设备状态轮询"
+        val usage = try {
+            monitorWaterUsage(orderNo, query = {
                 api.syncWater(skuId = skuId, token = token).requireData()
-            }.getOrElse { e ->
-                // 兜底定时器取消本协程时须透传，否则会被误判为开水失败
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                throwDiagnosed(e, "设备状态轮询")
-            }
-            if (lastStatus.workStatus == 2) everWorked = true
-            pollAttempts++
-            if (pollAttempts >= maxPollAttempts)
-                throwDiagnosed(Exception("设备使用超时（${maxPollAttempts}秒）"), "设备状态轮询")
-            onStep("设备工作中，正在等待完成")
-            delay(1000)
-        } while (lastStatus.workStatus == 2)
-
-        if (!everWorked) {
-            throwDiagnosed(Exception("设备未启动或未响应，可能已离线"), "设备状态轮询")
-        }
-
-        val finalOrderNo = lastStatus.identify ?: orderNo
-
-        // 水已出完，账单环节失败不应判为开水失败——降级为待确认订单，避免吓人的「未知错误」
-        val orderId: String
-        val detail: OrderDetailData
-        try {
-            onStep("正在创建后付订单")
-            currentStep = "创建后付订单"
-            orderId = api.createAfterPay(orderNo = finalOrderNo, token = token).requireData().orderId
-                ?: error("未获取到 orderId")
-
-            onStep("正在查询订单详情")
-            currentStep = "查询订单详情"
-            detail = api.orderDetail(orderId = orderId, token = token).requireData()
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: TokenExpiredException) {
+            }, onStep = onStep)
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            val reason = e.message?.take(80) ?: "未知原因"
-            val now = System.currentTimeMillis()
-            orderHistoryStore.add(
-                OrderHistoryItem(
-                    orderNo = finalOrderNo,
-                    orderId = "",
-                    goodsName = device.goodsName.ifBlank { "未命名设备" },
-                    originPrice = "-",
-                    ticketCost = "-",
-                    integralCost = "-",
-                    otherPromotions = emptyList(),
-                    completedAt = now,
-                ),
+            WaterUsageOutcome.Pending(
+                if (e is TokenExpiredException) "登录已失效，请重新登录后在胖乖生活核对本次订单"
+                else "暂时无法确认设备状态，请在胖乖生活核对本次订单",
             )
-            // 出水已成功，账单失败不判为开水失败——返回带 note 的成功结果，费用以官方账单为准
-            return UnlockResult(
-                orderNo = finalOrderNo,
-                orderId = "",
-                originPrice = "-",
-                ticketCost = "-",
-                integralCost = "-",
-                otherPromotions = emptyList(),
-                completedAt = now,
-                note = "出水已完成，账单查询失败（$reason），实际费用以官方 App 账单为准",
+        }
+        if (usage is WaterUsageOutcome.Pending) {
+            return savePendingWater(device, orderNo, usage.reason)
+        }
+        // 始终结算自己的订单，不能用设备最后一次返回的其他订单号替换。
+        val finalOrderNo = orderNo
+
+        // 水已出完，账单环节失败不应判为开水失败——降级为待确认订单，避免吓人的「未知错误」
+        var orderId = ""
+        val detail = try {
+            withTimeoutOrNull(20_000) {
+                onStep("正在创建后付订单")
+                currentStep = "创建后付订单"
+                orderId = api.createAfterPay(orderNo = finalOrderNo, token = token).requireData().orderId
+                    ?: error("未获取到 orderId")
+                onStep("正在查询订单详情")
+                currentStep = "查询订单详情"
+                api.orderDetail(orderId = orderId, token = token).requireData()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        if (detail == null) {
+            val result = UnlockResult(
+                orderNo = finalOrderNo, orderId = orderId,
+                originPrice = "-", ticketCost = "-", integralCost = "-",
+                otherPromotions = emptyList(), completedAt = System.currentTimeMillis(),
+                note = "设备已结束使用，账单暂未确认，实际费用以胖乖生活账单为准",
             )
+            saveWaterResult(device, result)
+            return result
         }
         val ticketCost = detail.promotionList.firstOrNull { it.promotionType == 4 }?.discountAmount ?: "-"
         val integralCost = detail.promotionList.firstOrNull { it.promotionType == 8 }?.discountAmount ?: "-"
@@ -229,18 +238,7 @@ class AppRepository(
             otherPromotions = otherPromotions,
             completedAt = System.currentTimeMillis(),
         )
-        orderHistoryStore.add(
-            OrderHistoryItem(
-                orderNo = result.orderNo,
-                orderId = result.orderId,
-                goodsName = device.goodsName.ifBlank { "未命名设备" },
-                originPrice = result.originPrice,
-                ticketCost = result.ticketCost,
-                integralCost = result.integralCost,
-                otherPromotions = result.otherPromotions,
-                completedAt = result.completedAt,
-            ),
-        )
+        saveWaterResult(device, result)
         return result
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
@@ -255,6 +253,27 @@ class AppRepository(
         }
     }
 
+
+
+    private fun savePendingWater(device: DeviceItem, orderNo: String, reason: String): UnlockResult {
+        val result = UnlockResult(
+            orderNo = orderNo, orderId = "", originPrice = "-", ticketCost = "-", integralCost = "-",
+            otherPromotions = emptyList(), completedAt = System.currentTimeMillis(),
+            note = reason, usageConfirmed = false,
+        )
+        saveWaterResult(device, result)
+        return result
+    }
+
+    private fun saveWaterResult(device: DeviceItem, result: UnlockResult) {
+        orderHistoryStore.add(OrderHistoryItem(
+            orderNo = result.orderNo, orderId = result.orderId,
+            goodsName = device.goodsName.ifBlank { "未命名设备" },
+            originPrice = result.originPrice, ticketCost = result.ticketCost,
+            integralCost = result.integralCost, otherPromotions = result.otherPromotions,
+            completedAt = result.completedAt, usageConfirmed = result.usageConfirmed, note = result.note,
+        ))
+    }
 
     // wrap 抛出的 IllegalStateException 丢失步骤上下文，未包装异常时用 currentStep 兜底
     private fun throwDiagnosed(original: Throwable, step: String): Nothing {
