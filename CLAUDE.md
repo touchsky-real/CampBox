@@ -18,11 +18,11 @@
 | `gradlew :app:testDebugUnitTest` | 单元测试 |
 | `gradlew :app:lintDebug` | Lint 检查 |
 
-**启动：** `adb shell monkey -p com.inonvation.lightlife -c android.intent.category.LAUNCHER 1`
+**启动：** `adb shell monkey -p com.inonvation.campbox -c android.intent.category.LAUNCHER 1`
 
 ## 源码架构
 
-**包名：** `com.inonvation.lightlife`
+**包名：** `com.inonvation.campbox`
 **源码路径：** `app/src/main/java/com/inonvation/lightlife/`
 
 | 路径 | 职责 |

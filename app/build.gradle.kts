@@ -5,7 +5,7 @@
 }
 
 android {
-    namespace = "com.inonvation.lightlife"
+    namespace = "com.inonvation.campbox"
     compileSdk = 35
 
     signingConfigs {
@@ -28,7 +28,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.inonvation.lightlife"
+        applicationId = "com.inonvation.campbox"
         minSdk = 26
         targetSdk = 35
         versionCode = project.findProperty("buildVersionCode")?.toString()?.toIntOrNull() ?: 13
