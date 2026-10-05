@@ -1,4 +1,4 @@
-﻿package com.inonvation.campbox.ui
+package com.inonvation.campbox.ui
 
 import android.app.Application
 import android.content.Context
@@ -45,6 +45,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 sealed class UiEvent {
+    data object OpenCampusPortal : UiEvent()
     data class Toast(val message: String) : UiEvent()
     data class Error(val message: String) : UiEvent()
 }
@@ -215,17 +216,59 @@ class AppViewModel(
         val log: suspend (String) -> Unit = { msg ->
             _state.update { s -> s.copy(campusLog = (s.campusLog + msg).takeLast(30)) }
         }
-        val result = runCatching { campusNetRunner.login(username, password, log) }
+        val result = runCatching { campusNetRunner.login(username, password, log, auto = silent) }
             .getOrElse { e ->
-                log("异常：${(e.message ?: "未知错误").take(60)}")
-                CampusNetResult.Failure("认证异常：${(e.message ?: "未知错误").take(60)}")
+                if (e is CancellationException) {
+                    _state.update { it.copy(campusLoggingIn = false) }
+                    throw e
+                }
+                CampusNetResult.Failure("认证异常（${e.javaClass.simpleName}），请检查 Wi-Fi 后重试")
             }
         val ok = result is CampusNetResult.Success
-        _state.update { it.copy(campusLoggingIn = false, campusLastSuccess = ok, campusHasSaved = campusNetStore.hasSaved()) }
+        val skipped = result is CampusNetResult.Skipped
+        _state.update { s ->
+            s.copy(
+                campusLoggingIn = false,
+                // 跳过（没连 Wi-Fi / 非校园网）保持上次状态，不标成功也不标失败
+                campusLastSuccess = if (skipped) s.campusLastSuccess else ok,
+                campusHasSaved = campusNetStore.hasSaved(),
+            )
+        }
         when {
             ok -> showToast("校园网已连通")
-            silent -> showError((result as CampusNetResult.Failure).reason)
-            else -> log((result as CampusNetResult.Failure).reason)
+            result is CampusNetResult.Failure -> {
+                if (silent) showError(result.reason) else {
+                    log(result.reason)
+                    log("自动认证未完成，打开官方网页登录备用入口")
+                    openCampusPortal()
+                }
+            }
+            // Skipped：原因已写入认证日志，不弹错误打扰
+        }
+    }
+
+    fun campusPortalUrl(): String = campusNetRunner.officialPortalUrl
+
+    fun openCampusPortal() {
+        if (!state.value.campusLoggingIn) _events.trySend(UiEvent.OpenCampusPortal)
+    }
+
+    fun verifyCampusInternetAfterPortal() = viewModelScope.launch {
+        if (state.value.campusLoggingIn) return@launch
+        _state.update { it.copy(campusLoggingIn = true) }
+        try {
+            val online = campusNetRunner.verifyWifiInternet()
+            _state.update { it.copy(campusLastSuccess = online,
+                campusLog = (it.campusLog + if (online) "官方网页登录后，Wi-Fi 外网已连通"
+                    else "尚未检测到 Wi-Fi 外网连通，可继续官方网页登录或重试连接").takeLast(30)) }
+            if (online) showToast("校园网已连通")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _state.update { it.copy(campusLastSuccess = false,
+                campusLog = (it.campusLog + "联网检查异常（${e.javaClass.simpleName}）").takeLast(30)) }
+        } finally {
+            _state.update { it.copy(campusLoggingIn = false) }
         }
     }
 

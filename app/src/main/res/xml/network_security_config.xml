@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <!-- 学校门户使用 GlobalSign OV 2018 / Root R3；仅为此域名补齐官方 CA 链。 -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">drcom.tyut.edu.cn</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/globalsign_root_r3" />
+            <certificates src="@raw/globalsign_ov_2018" />
+        </trust-anchors>
+    </domain-config>
+    <!-- 未认证的校园网通过 HTTP 重定向返回会话参数，HTTPS 无法替代这一步。 -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">connect.rom.miui.com</domain>
+        <domain includeSubdomains="false">connectivitycheck.platform.hicloud.com</domain>
+        <domain includeSubdomains="false">www.msftconnecttest.com</domain>
+        <domain includeSubdomains="false">www.baidu.com</domain>
+    </domain-config>
+</network-security-config>

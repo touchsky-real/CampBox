@@ -44,6 +44,7 @@ import com.inonvation.campbox.data.qzxy.QzxyRepository
 import com.inonvation.campbox.ui.AppViewModel
 import com.inonvation.campbox.ui.AppViewModelFactory
 import com.inonvation.campbox.ui.UiEvent
+import com.inonvation.campbox.ui.campus.CampusPortalActivity
 import com.inonvation.campbox.ui.screen.OrderHistoryBottomSheet
 import com.inonvation.campbox.ui.screen.QuickLinksSettingsScreen
 import com.inonvation.campbox.ui.screen.SettingsScreen
@@ -119,6 +120,9 @@ private fun AppRoot(vm: AppViewModel) {
     val state by vm.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val campusPortalLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        vm.verifyCampusInternetAfterPortal()
+    }
     var pendingIconIndex by remember { mutableStateOf(-1) }
     val iconPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -148,6 +152,11 @@ private fun AppRoot(vm: AppViewModel) {
     LaunchedEffect(Unit) {
         vm.events.collect { event ->
             when (event) {
+                is UiEvent.OpenCampusPortal -> {
+                    val current = vm.state.value
+                    campusPortalLauncher.launch(CampusPortalActivity.intent(context,
+                        current.campusUsername, current.campusPassword, vm.campusPortalUrl()))
+                }
                 is UiEvent.Toast -> Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
                 is UiEvent.Error -> snackbarHostState.showSnackbar(event.message)
             }

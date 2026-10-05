@@ -1,5 +1,11 @@
 ﻿package com.inonvation.campbox.ui.screen
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
@@ -36,6 +42,9 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -61,6 +70,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,6 +83,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -80,6 +91,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.inonvation.campbox.data.DeviceItem
 import com.inonvation.campbox.ui.AppUiState
 import com.inonvation.campbox.ui.AppViewModel
@@ -759,6 +773,46 @@ private fun DetailRow(label: String, value: String) {
 /** 校园网认证卡：账号密码输入 + 一键联网；未连 Wi-Fi 时提示 */
 @Composable
 private fun CampusNetCard(state: AppUiState, vm: AppViewModel, haptic: HapticFeedback) {
+    val context = LocalContext.current
+    var showConnectionInfo by rememberSaveable { mutableStateOf(false) }
+
+    if (showConnectionInfo) {
+        AlertDialog(
+            onDismissRequest = { showConnectionInfo = false },
+            title = { Text("校园网连接说明") },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("请先连接校园网 Wi-Fi，再回 App 点「连接」，由 App 向校园网网关提交认证。")
+                    Text("1. 打开系统 Wi-Fi 设置，选择 tyut-tsg（或所在位置的校园网 Wi-Fi）。")
+                    Text("2. 等待显示「已连接」或「已连接，但无法访问互联网」。如果还显示「正在连接」，请稍等。")
+                    Text("3. 回到 App，填写学号 / 上网账号和上网密码，点击「连接」。无需额外等待很久，App 会等待 Wi-Fi 就绪并尝试认证。")
+                    Text("4. App 提示 Wi-Fi 外网已连通，即可上网。认证前系统提示无法访问互联网是正常现象。")
+                    Text("自动认证失败时会打开官方网页登录页，并尝试填入保存的账号密码；请确认后点网页登录，完成后返回 App 检查联网。也可直接点「官方网页登录」。")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showConnectionInfo = false }) { Text("知道了") }
+            },
+        )
+    }
+
+    // 定位权限状态：SSID 识别依赖它；未授权时在卡片内给场景化的再申请入口
+    var locationGranted by remember { mutableStateOf(hasLocationPermission(context)) }
+    val owner = LocalLifecycleOwner.current
+    val locationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { locationGranted = hasLocationPermission(context) }
+    DisposableEffect(context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) locationGranted = hasLocationPermission(context)
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = CardShapes.cardCorner,
@@ -771,7 +825,7 @@ private fun CampusNetCard(state: AppUiState, vm: AppViewModel, haptic: HapticFee
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("一键连校园网", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                Text("一键连校园网", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 if (state.campusLoggingIn) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -787,13 +841,49 @@ private fun CampusNetCard(state: AppUiState, vm: AppViewModel, haptic: HapticFee
                         tint = AppColors.runningIndicator, modifier = Modifier.size(18.dp),
                     )
                 }
+                IconButton(onClick = { showConnectionInfo = true }) {
+                    Icon(Icons.Outlined.Info, contentDescription = "校园网连接说明",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             Spacer(Modifier.height(Spacings.xs))
-            Text(
-                "自动向校园网网关提交认证。请先连接校园网 Wi-Fi，再点「连接」",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            TextButton(
+                onClick = { openWifiSettings(context) },
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    "没连上 Wi-Fi？打开系统 Wi-Fi 面板",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (!locationGranted) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "未授权定位，无法识别校园网 Wi-Fi 名称",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = {
+                            locationLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                                )
+                            )
+                        },
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            "去授权",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(Spacings.md))
 
             OutlinedTextField(
@@ -870,6 +960,10 @@ private fun CampusNetCard(state: AppUiState, vm: AppViewModel, haptic: HapticFee
                 }
             }
 
+            TextButton(onClick = vm::openCampusPortal, enabled = !state.campusLoggingIn) {
+                Text("官方网页登录")
+            }
+
             // 认证日志
             if (state.campusLog.isNotEmpty()) {
                 Spacer(Modifier.height(Spacings.md))
@@ -894,6 +988,23 @@ private fun CampusNetCard(state: AppUiState, vm: AppViewModel, haptic: HapticFee
             }
         }
     }
+}
+
+/** 定位权限是否已授予（SSID 识别、开水定位均依赖） */
+private fun hasLocationPermission(context: android.content.Context): Boolean = runCatching {
+    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+        PackageManager.PERMISSION_GRANTED
+}.getOrDefault(false)
+
+/** 打开系统 Wi-Fi 面板/设置。Android 10+ 普通应用无法代连 Wi-Fi，只能引导用户点一下 */
+private fun openWifiSettings(context: android.content.Context) {
+    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        Intent(android.provider.Settings.Panel.ACTION_WIFI)
+    } else {
+        Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)
+    }
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
 }
 
 private fun formatClock(totalSeconds: Int): String {
