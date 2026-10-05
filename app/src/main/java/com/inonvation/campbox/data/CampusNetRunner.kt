@@ -8,9 +8,6 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -232,19 +229,16 @@ class CampusNetRunner(private val context: Context) {
         .callTimeout(12, TimeUnit.SECONDS)
         .build()
 
-    /** 两个探针并行，整轮最多 3 秒，不能通过移动数据误报成功。 */
-    private suspend fun checkInternet(client: OkHttpClient): Boolean = coroutineScope {
-        PROBES.map { url ->
-            async {
-                withTimeoutOrNull(3_000) {
-                    try {
-                        val reply = request(client, Request.Builder().url(url).header("User-Agent", UA).build())
-                        reply.code == 204 && reply.body.isEmpty()
-                    } catch (_: IOException) { false }
-                } == true
-            }
-        }.awaitAll().any { it }
-    }
+    /** 两个 Wi-Fi 探针并行，任一路确认联网即取消其余探测，全部失败才判定不通。 */
+    private suspend fun checkInternet(client: OkHttpClient): Boolean =
+        anyCampusProbeSucceeds(PROBES) { url ->
+            withTimeoutOrNull(3_000) {
+                try {
+                    val reply = request(client, Request.Builder().url(url).header("User-Agent", UA).build())
+                    reply.code == 204 && reply.body.isEmpty()
+                } catch (_: IOException) { false }
+            } == true
+        }
 
     /** 相对跳转和多次跳转均可发现；单个探针最多 2 秒，整个发现阶段最多 5 秒。 */
     private suspend fun discoverPortal(client: OkHttpClient): DiscoveredPortal? =
