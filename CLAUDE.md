@@ -1,4 +1,4 @@
-# LightLife 速查
+﻿# CampBox 速查
 
 面向太原理工大学的校园生活助手（胖乖生活开水 + 校园网认证 + 趣智校园淋浴），基于 [wzs0512/qiekj-android](https://github.com/wzs0512/qiekj-android) 重构。Jetpack Compose + Material3 UI，OkHttp 网络层，R8 全模式压缩。
 
@@ -74,7 +74,7 @@ CI 配置了 `KEYSTORE_BASE64` 等 4 个 GitHub Secrets 时，Release 构建自�
 ## 版本与发布
 
 - 版本号来自 Git Tag：CI 用 `-PbuildVersionName` / `-PbuildVersionCode` 注入（versionCode = 主版本×10000 + 次版本×100 + 补丁版本）
-- 本地构建默认 `versionName = 3.1.0` / `versionCode = 12`
+- 本地构建默认 `versionName = 3.1.2` / `versionCode = 30102`
 - 发布：更新 build.gradle.kts 默认版本 → commit → `git push origin main` → `git tag vX.Y.Z` → `git push origin v*`（或 `git push --tags`）
 - 发布工作流（`.github/workflows/release-apk.yml`）：推送 `v*` tag 自动云端编译、签名并挂载 APK 到 Release
 - CI（`.github/workflows/ci.yml`）：PR 到 main 时运行 lint → test → assemble

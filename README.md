@@ -1,6 +1,6 @@
-# LightLife
+﻿# CampBox
 
-LightLife 是面向太原理工大学校园生活场景的 Android 应用，集成胖乖生活开水、每日签到、校园网登录、余额与订单查询、快捷入口等功能。项目使用 Kotlin、Jetpack Compose 与 Material 3 开发。
+CampBox 是面向太原理工大学校园生活场景的 Android 应用，集成胖乖生活开水、每日签到、校园网登录、余额与订单查询、快捷入口等功能。项目使用 Kotlin、Jetpack Compose 与 Material 3 开发。
 
 > 本项目为非官方第三方工具，仅适用于太原理工大学当前接入的相关校园服务。校园平台、接口或认证规则变化后，部分功能可能失效。
 

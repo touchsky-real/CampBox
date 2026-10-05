@@ -70,7 +70,7 @@ jobs:
             -PbuildVersionName="$VERSION" \
             -PbuildVersionCode="$CODE"
           cp app/build/outputs/apk/release/app-release.apk \
-             "app/build/outputs/apk/release/LightLife-v${VERSION}.apk"
+             "app/build/outputs/apk/release/CampBox-v${VERSION}.apk"
 
       - name: 生成 Release 内容
         run: |
@@ -123,7 +123,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          files: app/build/outputs/apk/release/LightLife-v*.apk
+          files: app/build/outputs/apk/release/CampBox-v*.apk
           body_path: release_body.md
           fail_on_unmatched_files: false
 
