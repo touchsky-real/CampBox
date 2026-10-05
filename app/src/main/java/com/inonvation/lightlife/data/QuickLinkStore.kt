@@ -114,7 +114,7 @@ class QuickLinkStore(private val context: Context) {
             // 压缩到合理大小（128x128）
             val scaled = Bitmap.createScaledBitmap(bitmap, 128, 128, true)
 
-            val iconFile = File(iconDir, "icon_$index.png")
+            val iconFile = newIconFile(index)
             FileOutputStream(iconFile).use { out ->
                 scaled.compress(Bitmap.CompressFormat.PNG, 90, out)
             }
@@ -122,6 +122,7 @@ class QuickLinkStore(private val context: Context) {
             if (scaled != bitmap) scaled.recycle()
             bitmap.recycle()
 
+            deleteIconFile(index)
             prefs.edit().putString("icon_$index", iconFile.absolutePath).apply()
             true
         } catch (e: Exception) {
@@ -131,12 +132,21 @@ class QuickLinkStore(private val context: Context) {
     }
 
     fun removeIcon(index: Int) {
+        deleteIconFile(index)
+        prefs.edit().remove("icon_$index").apply()
+    }
+
+    /** 删除槽位当前记录的图标文件（不清理 prefs 记录） */
+    private fun deleteIconFile(index: Int) {
         val path = prefs.getString("icon_$index", "") ?: ""
         if (path.isNotBlank()) {
             File(path).delete()
         }
-        prefs.edit().remove("icon_$index").apply()
     }
+
+    /** 新图标文件用全局唯一文件名，避免槽位交换/前移时同名文件互相覆盖 */
+    private fun newIconFile(index: Int): File =
+        File(iconDir, "icon_${index}_${System.currentTimeMillis()}.png")
 
     /** 保存预设图标（从 drawable 资源复制） */
     fun savePresetIcon(index: Int, presetIndex: Int) {
@@ -149,12 +159,13 @@ class QuickLinkStore(private val context: Context) {
         try {
             val bitmap = BitmapFactory.decodeResource(context.resources, resId)
             val scaled = Bitmap.createScaledBitmap(bitmap, 128, 128, true)
-            val iconFile = File(iconDir, "icon_$index.png")
+            val iconFile = newIconFile(index)
             FileOutputStream(iconFile).use { out ->
                 scaled.compress(Bitmap.CompressFormat.PNG, 90, out)
             }
             if (scaled != bitmap) scaled.recycle()
             bitmap.recycle()
+            deleteIconFile(index)
             prefs.edit().putString("icon_$index", iconFile.absolutePath).apply()
         } catch (e: Exception) {
             e.printStackTrace()
@@ -178,6 +189,25 @@ class QuickLinkStore(private val context: Context) {
                 .putString("url_$i", link.url)
                 .putString("pkg_$i", link.packageName)
                 .putInt("preset_$i", link.presetIndex)
+                .putString("icon_$i", link.iconUri)
+        }
+        editor.apply()
+    }
+
+    /** 删除后前移补位：图标记录与内容一起前移，原最后槽位清空 */
+    fun shiftLinksAfterDelete(index: Int) {
+        val links = getLinks().toMutableList()
+        if (index !in links.indices) return
+        links.removeAt(index)
+        links.add(QuickLink())
+        val editor = prefs.edit()
+        links.forEachIndexed { i, link ->
+            editor
+                .putString("name_$i", link.name)
+                .putString("url_$i", link.url)
+                .putString("pkg_$i", link.packageName)
+                .putInt("preset_$i", link.presetIndex)
+                .putString("icon_$i", link.iconUri)
         }
         editor.apply()
     }
@@ -221,7 +251,8 @@ class QuickLinkStore(private val context: Context) {
             val index = key.removePrefix("icon_").toIntOrNull() ?: return@forEach
             try {
                 val bytes = android.util.Base64.decode(base64, android.util.Base64.NO_WRAP)
-                val iconFile = File(iconDir, "icon_$index.png")
+                deleteIconFile(index)
+                val iconFile = newIconFile(index)
                 FileOutputStream(iconFile).use { it.write(bytes) }
                 prefs.edit().putString("icon_$index", iconFile.absolutePath).apply()
             } catch (_: Exception) {}

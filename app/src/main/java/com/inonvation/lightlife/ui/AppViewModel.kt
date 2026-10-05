@@ -529,7 +529,7 @@ class AppViewModel(
         }
     }
 
-    /** 删除任意槽位：预设槽清空后仍可被「重置为默认」找回；自定义槽删除后后续条目前移补位 */
+    /** 删除任意槽位：预设槽清空后仍可被「重置为默认」找回；自定义槽删除后后续条目（含图标）前移补位 */
     fun deleteQuickLink(index: Int) {
         val links = _state.value.quickLinks.toMutableList()
         if (index !in links.indices) return
@@ -538,12 +538,7 @@ class AppViewModel(
             // 预设槽被改为自定义后允许删除，清空内容即可
             quickLinkStore?.updateLink(index, "", "", "", -1)
         } else {
-            quickLinkStore?.updateLink(index, "", "", "", -1)
-            for (i in index until links.size - 1) {
-                val next = links[i + 1]
-                quickLinkStore?.updateLink(i, next.name, next.url, next.packageName, next.presetIndex)
-            }
-            quickLinkStore?.updateLink(links.size - 1, "", "", "", -1)
+            quickLinkStore?.shiftLinksAfterDelete(index)
         }
         quickLinkStore?.let {
             _state.update { s -> s.copy(quickLinks = it.getLinks()) }
