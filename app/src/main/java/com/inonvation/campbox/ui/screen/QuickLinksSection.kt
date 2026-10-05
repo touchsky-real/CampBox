@@ -51,6 +51,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -293,7 +294,13 @@ internal fun QuickLinksSection(
                 configuredLinks
             }
             val rowCount = (displayLinks.size + 2) / 3
-            var draggedIndex by remember { mutableIntStateOf(-1) }
+            // 展示位（压缩后的网格序号）→ 真实槽位（quickLinks 列表下标）。
+            // 交换只挪动非空槽位的内容，此映射在拖动期间保持不变。
+            val realSlotOfDisplay = state.quickLinks.withIndex().filter { it.value.url.isNotBlank() }.map { it.index }
+            val realSlotOfDisplayState = rememberUpdatedState(realSlotOfDisplay)
+            val maxSortableDisplayState = rememberUpdatedState(configuredLinks.size - 1)
+            // 被拖动卡片当前所在的展示位（随交换推进），-1 表示未在拖动
+            var dragDisplayIndex by remember { mutableIntStateOf(-1) }
             var dragOffsetX by remember { mutableFloatStateOf(0f) }
             var dragOffsetY by remember { mutableFloatStateOf(0f) }
             var contextMenuIndex by remember { mutableIntStateOf(-1) }
@@ -311,52 +318,68 @@ internal fun QuickLinksSection(
                             if (displayIdx < displayLinks.size) {
                                 val link = displayLinks[displayIdx]
                                 val hasLink = link.url.isNotBlank()
-                                val realIndex = if (hasLink) state.quickLinks.indexOf(link) else -1
+                                val realIndex = if (hasLink) realSlotOfDisplay[displayIdx] else -1
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .zIndex(if (draggedIndex == realIndex) 1f else 0f)
+                                        .zIndex(if (dragDisplayIndex == displayIdx) 1f else 0f)
                                         .graphicsLayer {
-                                            translationX = if (draggedIndex == realIndex) dragOffsetX else 0f
-                                            translationY = if (draggedIndex == realIndex) dragOffsetY else 0f
-                                            scaleX = if (draggedIndex == realIndex) 1.05f else 1f
-                                            scaleY = if (draggedIndex == realIndex) 1.05f else 1f
+                                            val dragging = dragDisplayIndex == displayIdx
+                                            translationX = if (dragging) dragOffsetX else 0f
+                                            translationY = if (dragging) dragOffsetY else 0f
+                                            scaleX = if (dragging) 1.05f else 1f
+                                            scaleY = if (dragging) 1.05f else 1f
                                         }
                                         .then(
                                             if (isSorting.value && hasLink) {
-                                                Modifier.pointerInput(realIndex) {
+                                                Modifier.pointerInput(displayIdx) {
                                                     detectDragGesturesAfterLongPress(
-                                                        onDragStart = { draggedIndex = realIndex },
+                                                        onDragStart = {
+                                                            dragOffsetX = 0f
+                                                            dragOffsetY = 0f
+                                                            dragDisplayIndex = displayIdx
+                                                        },
                                                         onDrag = { change, dragAmount ->
                                                             change.consume()
                                                             dragOffsetX += dragAmount.x
                                                             dragOffsetY += dragAmount.y
-                                                            val thresholdY = with(change) { 80.dp.toPx() }
-                                                            val thresholdX = with(change) { 55.dp.toPx() }
-                                                            val rowsMoved = (dragOffsetY / thresholdY).toInt()
-                                                            if (rowsMoved != 0) {
-                                                                val target = (realIndex + rowsMoved * 3).coerceIn(0, state.quickLinks.size - 1)
-                                                                if (target != realIndex) {
-                                                                    vm.swapQuickLinks(realIndex, target)
-                                                                    draggedIndex = -1
-                                                                    dragOffsetX = 0f
-                                                                    dragOffsetY = 0f
+                                                            val realSlots = realSlotOfDisplayState.value
+                                                            var from = dragDisplayIndex
+                                                            if (from in realSlots.indices) {
+                                                                val maxDisplay = maxSortableDisplayState.value
+                                                                // 以「被拖动卡片当前所在的展示位」为基准，
+                                                                // 每跨过一行/一列阈值交换一次；手指不松开可连续换位，
+                                                                // 不会再用旧下标把刚换好的位置换回去
+                                                                val rowThreshold = 80.dp.toPx()
+                                                                val rowsMoved = (dragOffsetY / rowThreshold).toInt()
+                                                                if (rowsMoved != 0) {
+                                                                    val target = (from + rowsMoved * 3).coerceIn(0, maxDisplay)
+                                                                    if (target != from) {
+                                                                        vm.swapQuickLinks(realSlots[from], realSlots[target])
+                                                                        from = target
+                                                                        dragDisplayIndex = target
+                                                                        dragOffsetY -= rowsMoved * rowThreshold
+                                                                    } else {
+                                                                        dragOffsetY = 0f
+                                                                    }
                                                                 }
-                                                            }
-                                                            val colsMoved = (dragOffsetX / thresholdX).toInt()
-                                                            if (colsMoved != 0) {
-                                                                val currentRow = realIndex / 3
-                                                                val target = (realIndex + colsMoved).coerceIn(currentRow * 3, ((currentRow + 1) * 3 - 1).coerceAtMost(state.quickLinks.size - 1))
-                                                                if (target != realIndex) {
-                                                                    vm.swapQuickLinks(realIndex, target)
-                                                                    draggedIndex = -1
-                                                                    dragOffsetX = 0f
-                                                                    dragOffsetY = 0f
+                                                                val colThreshold = 55.dp.toPx()
+                                                                val colsMoved = (dragOffsetX / colThreshold).toInt()
+                                                                if (colsMoved != 0) {
+                                                                    val rowStart = from / 3 * 3
+                                                                    val target = (from + colsMoved).coerceIn(rowStart, minOf(rowStart + 2, maxDisplay))
+                                                                    if (target != from) {
+                                                                        vm.swapQuickLinks(realSlots[from], realSlots[target])
+                                                                        dragDisplayIndex = target
+                                                                        dragOffsetX -= colsMoved * colThreshold
+                                                                    } else {
+                                                                        dragOffsetX = 0f
+                                                                    }
                                                                 }
                                                             }
                                                         },
-                                                        onDragEnd = { draggedIndex = -1; dragOffsetX = 0f; dragOffsetY = 0f },
-                                                        onDragCancel = { draggedIndex = -1; dragOffsetX = 0f; dragOffsetY = 0f },
+                                                        onDragEnd = { dragDisplayIndex = -1; dragOffsetX = 0f; dragOffsetY = 0f },
+                                                        onDragCancel = { dragDisplayIndex = -1; dragOffsetX = 0f; dragOffsetY = 0f },
                                                     )
                                                 }
                                             } else Modifier
