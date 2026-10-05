@@ -372,8 +372,6 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                     Text("• 新设备可点首页「扫码喝水」，扫描机身上的胖乖二维码，识别并选择后再点「开水」。", style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(4.dp))
                     Text("• 开水为「后付费」，需先在官方 App 开通支付宝免密支付，否则会在「开通后付」步骤报错。", style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(4.dp))
-                    Text("• 已开通但不想被自动扣款：可在支付宝「设置 → 支付设置 → 免密支付」中调低限额。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
             confirmButton = {
