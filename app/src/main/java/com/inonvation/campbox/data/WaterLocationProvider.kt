@@ -64,25 +64,30 @@ class WaterLocationProvider(private val context: Context) {
             .sortedBy { PREFERRED_PROVIDERS.indexOf(it) }
         if (providers.isEmpty()) throw LocationUnavailableException("定位服务未开启")
 
-        return suspendCancellableCoroutine { continuation ->
-            val resumed = AtomicBoolean(false)
-            val listener = LocationListener { location ->
-                if (resumed.compareAndSet(false, true)) {
-                    continuation.resume(location)
+        var listener: LocationListener? = null
+        return try {
+            suspendCancellableCoroutine { continuation ->
+                val resumed = AtomicBoolean(false)
+                val callback = LocationListener { location ->
+                    if (resumed.compareAndSet(false, true)) {
+                        continuation.resume(location)
+                    }
+                }
+                listener = callback
+                for (provider in providers) {
+                    if (!continuation.isActive) break
+                    locationManager.requestLocationUpdates(
+                        provider,
+                        MIN_UPDATE_INTERVAL_MILLIS,
+                        MIN_UPDATE_DISTANCE_METERS,
+                        callback,
+                        Looper.getMainLooper(),
+                    )
                 }
             }
-            continuation.invokeOnCancellation {
-                locationManager.removeUpdates(listener)
-            }
-            providers.forEach { provider ->
-                locationManager.requestLocationUpdates(
-                    provider,
-                    MIN_UPDATE_INTERVAL_MILLIS,
-                    MIN_UPDATE_DISTANCE_METERS,
-                    listener,
-                    Looper.getMainLooper(),
-                )
-            }
+        } finally {
+            // 成功、超时、取消及部分注册失败，都在注册流程结束后移除全部监听。
+            listener?.let(locationManager::removeUpdates)
         }
     }
 
