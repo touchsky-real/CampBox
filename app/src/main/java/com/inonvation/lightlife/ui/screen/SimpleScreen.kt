@@ -127,7 +127,7 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("LightLife", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("CampBox", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         state.balance?.pointsText ?: "-",
@@ -234,7 +234,7 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
 
                 item {
                     Text(
-                        text = "LightLife v${state.appVersion}",
+                        text = "CampBox v${state.appVersion}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth().padding(top = Spacings.lg),

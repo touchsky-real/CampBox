@@ -276,7 +276,7 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                         )
                         val context = LocalContext.current
                         Text(
-                            "LightLife v${state.appVersion}",
+                            "CampBox v${state.appVersion}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.clickable {
