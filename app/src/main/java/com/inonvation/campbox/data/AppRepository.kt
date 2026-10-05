@@ -297,8 +297,8 @@ class AppRepository(
         }
     }
 
-    suspend fun validateToken() {
-        val resp = api.queryBalance(requireToken())
+    suspend fun validateToken(token: String = requireToken()) {
+        val resp = api.queryBalance(token)
         resp.requireData()
     }
 

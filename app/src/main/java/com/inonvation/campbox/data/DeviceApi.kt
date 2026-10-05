@@ -3,6 +3,7 @@
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.HeaderMap
+import retrofit2.http.Header
 import retrofit2.http.POST
 
 interface DeviceApi {
@@ -23,7 +24,10 @@ interface DeviceApi {
 
     @FormUrlEncoded
     @POST("user/balance")
-    suspend fun queryBalance(@Field("token") token: String): ApiEnvelope<BalanceData>
+    suspend fun queryBalance(
+        @Field("token") token: String,
+        @Header("token") tokenHeader: String = token,
+    ): ApiEnvelope<BalanceData>
 
     @FormUrlEncoded
     @POST("goods/latestUsed")

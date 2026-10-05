@@ -5,6 +5,7 @@ import com.inonvation.campbox.data.UserPrefsStore
 import com.inonvation.campbox.ui.AppUiState
 import com.inonvation.campbox.ui.UnlockFlowState
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -47,27 +48,29 @@ class AuthController(
     }
 
     fun loginWithToken() = scope.launch {
-        val token = state.value.tokenLoginInput
+        if (state.value.tokenLoggingIn || state.value.loggingIn) return@launch
+        val token = state.value.tokenLoginInput.trim()
         if (token.isBlank()) {
             showError("请输入 Token")
             return@launch
         }
         runCatching {
             updateState { it.copy(tokenLoggingIn = true) }
-            repository.saveToken(token)
-            repository.validateToken()
+            repository.validateToken(token)
         }.onSuccess {
+            repository.saveToken(token)
             updateState { it.copy(hasToken = true, tokenLoggingIn = false, showTokenLogin = false, tokenLoginInput = "") }
             showToast("登录成功")
             onAuthSuccess()
         }.onFailure {
             updateState { it.copy(tokenLoggingIn = false) }
-            repository.clearToken()
+            if (it is CancellationException) throw it
             showError(it.message ?: "Token 无效或已过期")
         }
     }
 
     fun sendCode() = scope.launch {
+        if (state.value.sendingCode) return@launch
         val phone = state.value.phone.trim()
         val elapsed = System.currentTimeMillis() - codeSentTimestamp
         if (elapsed < 60_000) {
@@ -85,12 +88,15 @@ class AuthController(
             codeSentTimestamp = System.currentTimeMillis()
             showToast("验证码已发送")
         }.onFailure {
+            updateState { it.copy(sendingCode = false) }
+            if (it is CancellationException) throw it
             showError(it.message ?: "验证码发送失败")
         }
         updateState { it.copy(sendingCode = false) }
     }
 
     fun login() = scope.launch {
+        if (state.value.loggingIn || state.value.tokenLoggingIn) return@launch
         val phone = state.value.phone.trim()
         val code = state.value.code.trim()
         if (phone.isBlank() || !PHONE_REGEX.matches(phone)) {
@@ -111,6 +117,7 @@ class AuthController(
             onAuthSuccess()
         }.onFailure {
             updateState { it.copy(loggingIn = false) }
+            if (it is CancellationException) throw it
             showError(it.message ?: "登录失败")
         }
     }
