@@ -1,104 +1,54 @@
-﻿# CampBox
+# CampBox
 
-CampBox 是面向太原理工大学校园生活场景的 Android 应用，集成胖乖生活开水、每日签到、校园网登录、余额与订单查询、快捷入口等功能。项目使用 Kotlin、Jetpack Compose 与 Material 3 开发。
+面向太原理工大学校园生活的 Android 工具，集成喝水、洗澡、校园网认证和常用快捷方式。使用 Kotlin、Jetpack Compose 和 Material 3 开发。
 
-> 本项目为非官方第三方工具，仅适用于太原理工大学当前接入的相关校园服务。校园平台、接口或认证规则变化后，部分功能可能失效。
+[下载最新版](https://github.com/touchsky-real/light-life/releases/latest) · [反馈问题](https://github.com/touchsky-real/light-life/issues)
+
+支持 Android 8.0 及以上系统，当前构建面向 `arm64-v8a` 设备。
 
 ## 主要功能
 
-- 胖乖生活手机号验证码或 Token 登录
-- 历史设备一键开水、积分抵扣和订单记录
-- 每日自动签到及手动签到
-- 积分余额、可抵扣金额和使用统计
-- 太原理工大学校园网快捷登录
-- 趣智校园淋浴设备支持
-- 自定义网页与设备桌面快捷方式
-- 深色模式、主题配色和触感反馈
+| 功能 | 支持内容 |
+| --- | --- |
+| 喝水 · 胖乖生活 | 手机号验证码或 token 登录；扫码选择饮水机、历史设备开水、积分抵扣、余额和本地订单记录 |
+| 签到与积分 | 手动签到、启动时自动签到；首页手动执行积分任务 |
+| 洗澡 · 趣智校园 | 独立账号登录、附近设备扫描、手动输入 MAC 绑定、联网或蓝牙设备开关阀、使用结算及备用使用码 |
+| 校园网 | 太原理工大学 Dr.COM 认证、启动时自动连接、官方网页登录备用入口 |
+| 快捷方式与外观 | 自定义链接、排序和图标、添加桌面快捷方式；深浅色模式、主题配色、触感反馈、检查更新 |
 
-## 下载与安装
+## 使用
 
-前往项目的 GitHub Releases 页面下载最新版 APK：
+**喝水**：登录胖乖生活账号，在首页选择历史设备，或点击「扫码喝水」扫描饮水机上的二维码。确认设备后再点「开水」。扫码本身不会启动设备；实际开始、暂停和结束取水以机身按钮及设备提示为准。
 
-https://github.com/touchsky-real/light-life/releases
+开水卡会显示使用状态和结算结果。出现「状态待确认」时，应检查设备和官方账单，不能当作已经停止出水。当前扫码开水支持普通联网饮水机，胖乖蓝牙饮水机请使用官方 App。
 
-Android 8.0（API 26）及以上系统可安装，当前仅构建 `arm64-v8a` 架构版本。升级安装必须使用与旧版本相同的签名。
+**洗澡**：单独登录趣智校园账号，扫描附近设备或输入 MAC 地址进行绑定，再使用开关阀功能。已接入联网和蓝牙两类控制流程，具体可用性取决于学校及设备型号。
 
-## 基本使用
+**校园网**：先在系统设置中连接校园 Wi-Fi，再填写学号 / 上网账号和密码，点击「连接」。连接失败时可使用「官方网页登录」；网页会尝试填入已保存的账号，需要自行确认并提交登录。
 
-1. 打开 App，使用手机号验证码或 Token 登录。
-2. 根据系统提示授予网络、蓝牙或定位权限。
-3. 在首页选择需要使用的开水、校园网、淋浴或快捷入口功能。
-4. 自动签到可在设置中开启或关闭。
+**签到**：在设置中开启「启动时自动签到」，打开 App 时执行当日签到。其他积分任务需要在首页手动点击「刷积分」。
+
+胖乖生活、趣智校园和校园网账号相互独立。相机、定位和蓝牙权限按对应功能的提示授予。
 
 ## 本地开发
 
-环境要求：
-
-- Android Studio 或 JDK 17
-- Android SDK 35
-- Gradle Wrapper（项目已包含）
-
-常用命令：
+需要 JDK 17、Android SDK 35，使用仓库自带的 Gradle Wrapper：
 
 ```powershell
 .\gradlew.bat :app:compileDebugKotlin
-.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug
 .\gradlew.bat :app:assembleDebug
 .\gradlew.bat :app:assembleRelease
 ```
 
-默认本地 Release 构建沿用项目现有调试签名，便于兼容历史安装。正式发布建议通过 GitHub Actions 注入独立 Keystore。
+APK 输出到 `app/build/outputs/apk/`。升级安装需沿用原有签名，不要删除或重新生成 `app/debug.keystore`。
 
-## 自动发布
+源码位于 `app/src/main/java/com/inonvation/campbox/`，其中 `data/` 负责接口与存储，`ui/` 负责页面和状态管理，两个目录下的 `qzxy/` 为趣智校园模块。测试位于 `app/src/test/`，协议和适配说明见 [docs](docs/)。
 
-推送格式为 `v*` 的 Git Tag 后，`.github/workflows/release-apk.yml` 会自动：
+推送 `v*` 标签后，GitHub Actions 会自动构建并发布 Release APK；版本名取自标签。流程见 [release-apk.yml](.github/workflows/release-apk.yml)。
 
-1. 配置 JDK 17 和 Gradle 缓存。
-2. 从 GitHub Secrets 恢复 Release Keystore（未配置时回退仓库内置调试签名，发布不中断）。
-3. 使用 Tag 作为 `versionName` 编译 Release APK，`versionCode` 由 Tag 版本号计算。
-4. 自动生成版本更新说明。
-5. 创建 GitHub Release 并上传 APK。
+## 项目说明
 
-### 配置 GitHub Secrets
+本项目是非官方第三方工具，与学校及相关服务提供方无隶属关系。校园网配置面向太原理工大学，其他平台功能的兼容性受学校、设备及接口变化影响。
 
-先在 PowerShell 中将 Keystore 转为 Base64：
-
-```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\release.jks")) | Set-Clipboard
-```
-
-进入 GitHub 仓库的 `Settings > Secrets and variables > Actions`，添加以下 Repository secrets：
-
-- `KEYSTORE_BASE64`：Keystore 文件的 Base64 内容
-- `KEYSTORE_PASSWORD`：Keystore 密码
-- `KEY_ALIAS`：签名密钥别名
-- `KEY_PASSWORD`：签名密钥密码
-
-### 发布新版本
-
-确保版本提交已推送到 `main`，再创建并推送 Tag：
-
-```bash
-git push origin main
-git tag v3.1.0
-git push origin v3.1.0
-```
-
-`versionName` 取 Tag 去掉 `v` 后的内容，`versionCode` 按「主版本×10000 + 次版本×100 + 补丁版本」计算。
-
-## 项目结构
-
-- `app/src/main/java/com/inonvation/lightlife/data`：接口、数据模型、存储与任务执行
-- `app/src/main/java/com/inonvation/lightlife/ui`：状态管理和 Compose 界面
-- `.github/workflows`：持续集成与自动发布
-- `docs`：协议和设计说明
-
-## 免责声明
-
-本项目仅供学习、研究和个人测试使用，与太原理工大学、胖乖生活及其他服务提供方无隶属或授权关系。自动签到、校园网络认证及设备控制功能可能受到服务条款、接口调整和校园管理规定限制。使用者应自行评估并承担账号、设备、数据和服务可用性风险。
-
-请勿提交个人 Token、账号密码、抓包文件或签名密钥。发现敏感信息意外进入 Git 历史时，应立即吊销并更换相关凭据。
-
-## 许可证
-
-项目许可证见 `LICENSE`。
+项目基于 [Inonvation/light-life](https://github.com/Inonvation/light-life) 与 [wzs0512/qiekj-android](https://github.com/wzs0512/qiekj-android)，趣智校园实现参考 [yehu-imei/linyu](https://github.com/yehu-imei/linyu)。采用 [MIT 许可证](LICENSE)。请勿提交个人账号、密码、token 或抓包文件。
