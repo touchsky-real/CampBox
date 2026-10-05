@@ -37,8 +37,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -74,6 +78,12 @@ class AppViewModel(
         ),
     )
     val state: StateFlow<AppUiState> = _state
+
+    /** 顶层主题只取外观两项，单独成流，避免高频状态变化引发整页重组 */
+    val appearance: StateFlow<Pair<ThemeMode, ColorTheme>> = state
+        .map { it.themeMode to it.colorTheme }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, _state.value.let { it.themeMode to it.colorTheme })
 
     // 公开 quickLinkStore 供快捷方式图标使用
     fun getQuickLinkStore(): QuickLinkStore? = quickLinkStore

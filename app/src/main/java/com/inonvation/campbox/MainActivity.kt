@@ -86,26 +86,26 @@ class MainActivity : ComponentActivity() {
         val themePrefs = ThemePreferences(applicationContext)
         val quickLinkStore = QuickLinkStore(applicationContext)
         val qzxyRepository = QzxyRepository(applicationContext, QzxyAuthStore(applicationContext))
+        val factory = AppViewModelFactory(
+            application = application,
+            repository = repository,
+            appVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown",
+            userPrefsStore = userPrefsStore,
+            themePreferences = themePrefs,
+            quickLinkStore = quickLinkStore,
+            qzxyRepository = qzxyRepository,
+        )
         setContent {
-            val vm: AppViewModel = viewModel(
-                factory = AppViewModelFactory(
-                    application = application,
-                    repository = repository,
-                    appVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown",
-                    userPrefsStore = userPrefsStore,
-                    themePreferences = themePrefs,
-                    quickLinkStore = quickLinkStore,
-                    qzxyRepository = qzxyRepository,
-                ),
-            )
-            val uiState by vm.state.collectAsState()
+            val vm: AppViewModel = viewModel(factory = factory)
+            // 顶层主题只订阅外观设置，计时、日志等状态由 AppRoot 自己处理。
+            val appearance by vm.appearance.collectAsState()
             DeviceControlTheme(
-                darkTheme = when (uiState.themeMode) {
+                darkTheme = when (appearance.first) {
                     ThemeMode.SYSTEM -> isSystemInDarkTheme()
                     ThemeMode.DARK -> true
                     ThemeMode.LIGHT -> false
                 },
-                colorTheme = uiState.colorTheme,
+                colorTheme = appearance.second,
             ) {
                 AppRoot(vm)
             }
