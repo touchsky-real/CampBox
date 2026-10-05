@@ -26,16 +26,20 @@ object UpdateChecker {
         "",
     )
 
+    // 多次检查复用连接池和线程资源，首次检查时才创建。
+    private val client by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
     /**
      * 检查最新 Release。
      * 成功返回 Result.success(info)；已是最新版本时 info 为 null；所有更新源均失败时返回 failure。
      */
     fun check(currentVersion: String): Result<UpdateInfo?> = runCatching {
         var lastError: Exception? = null
-        val client = OkHttpClient.Builder()
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .build()
         for (mirror in MIRRORS) {
             try {
                 val url = if (mirror.isEmpty()) LATEST_API else "$mirror$LATEST_API"
