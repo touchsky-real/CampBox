@@ -100,6 +100,10 @@ import com.inonvation.campbox.ui.AppViewModel
 import com.inonvation.campbox.ui.UnlockFlowState
 import com.inonvation.campbox.ui.pinDeviceShortcut
 import com.inonvation.campbox.ui.qzxy.screen.QzxyShowerSection
+import com.inonvation.campbox.ui.qzxy.screen.QzxyAccountActions
+import com.inonvation.campbox.ui.qzxy.screen.QzxyAccountSheet
+import com.inonvation.campbox.ui.qzxy.screen.QzxyLoginSheet
+import com.inonvation.campbox.ui.qzxy.screen.QzxyLogoutConfirmDialog
 import com.inonvation.campbox.ui.theme.AppColors
 import com.inonvation.campbox.ui.theme.CardShapes
 import com.inonvation.campbox.ui.theme.Spacings
@@ -127,7 +131,7 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
     }
 
     val pullRefreshState = rememberPullToRefreshState()
-    val isRefreshing = state.loadingBalance || state.loadingDevices
+    val isRefreshing = state.loadingBalance || state.loadingDevices || state.qzxy.loadingWallet
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -169,6 +173,7 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                     vm.refreshDevices()
                     vm.refreshBalance()
                 }
+                if (state.qzxy.loggedIn) vm.qzxyRefreshWallet()
             },
             state = pullRefreshState,
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -213,26 +218,27 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                             haptic = haptic,
                         )
                     }
-                    return@LazyColumn
                 }
 
-                // 账户状态行：小票 + 累计开水 + 签到按钮
-                item { AccountStripRow(state, vm, haptic) }
+                if (state.hasToken) {
+                    // 账户状态行：小票 + 累计开水 + 签到按钮
+                    item { AccountStripRow(state, vm, haptic) }
 
-                // 开水
-                item { SectionLabel("开水", subtitle = "饮水机服务来自「胖乖生活」，用胖乖账号计费，积分可抵扣水费") }
-                item {
-                    WaterCard(
-                        state = state,
-                        vm = vm,
-                        selectedDevice = selectedDevice,
-                        onSelectDevice = { selectedDevice = it },
-                        onShowDetail = { showWaterDetail = true },
-                        onPickDevice = { showDeviceSheet = true },
-                        onShowHelp = { showWaterHelp = true },
-                        haptic = haptic,
-                        context = ctx,
-                    )
+                    // 开水
+                    item { SectionLabel("开水", subtitle = "饮水机服务来自「胖乖生活」，用胖乖账号计费，积分可抵扣水费") }
+                    item {
+                        WaterCard(
+                            state = state,
+                            vm = vm,
+                            selectedDevice = selectedDevice,
+                            onSelectDevice = { selectedDevice = it },
+                            onShowDetail = { showWaterDetail = true },
+                            onPickDevice = { showDeviceSheet = true },
+                            onShowHelp = { showWaterHelp = true },
+                            haptic = haptic,
+                            context = ctx,
+                        )
+                    }
                 }
 
                 // 校园网
@@ -241,7 +247,12 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
 
                 // 洗澡（趣智校园）
                 item { SectionLabel("洗澡", subtitle = "宿舍淋浴服务来自「趣智校园」，需另注册趣智账号，与胖乖无关") }
-                item { QzxyShowerSection(state = state, vm = vm, haptic = haptic) }
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacings.sm)) {
+                        if (state.qzxy.loggedIn) QzxyAccountActions(state.qzxy, vm)
+                        QzxyShowerSection(state = state, vm = vm, haptic = haptic)
+                    }
+                }
 
                 item {
                     Text(
@@ -254,6 +265,13 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                 }
             }
         }
+    }
+
+    // 账户弹层放在列表外，趣智卡片滚出屏幕时仍能从设置打开。
+    if (state.qzxy.showLoginSheet) QzxyLoginSheet(state.qzxy, vm)
+    if (state.qzxy.showLogoutConfirm) QzxyLogoutConfirmDialog(state.qzxy, vm)
+    if (state.qzxy.loggedIn && state.qzxy.accountPage != null) {
+        QzxyAccountSheet(state.qzxy, vm)
     }
 
     state.waterScanError?.let { message ->

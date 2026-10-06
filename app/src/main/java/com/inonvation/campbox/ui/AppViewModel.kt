@@ -12,16 +12,17 @@ import com.inonvation.campbox.data.CampusNetRunner
 import com.inonvation.campbox.data.CampusNetStore
 import com.inonvation.campbox.data.DEFAULT_QUICK_LINKS
 import com.inonvation.campbox.data.PRESET_LINK_COUNT
-import com.inonvation.campbox.data.DeviceIdProvider
 import com.inonvation.campbox.data.DeviceItem
+import com.inonvation.campbox.data.DeviceIdProvider
+import com.inonvation.campbox.data.SignInRunner
 import com.inonvation.campbox.data.UserPrefsStore
 import com.inonvation.campbox.data.QuickLinkStore
-import com.inonvation.campbox.data.SignInRunner
 import com.inonvation.campbox.data.TokenExpiredException
 import com.inonvation.campbox.data.UnlockException
 import com.inonvation.campbox.data.UpdateChecker
 import com.inonvation.campbox.ui.auth.AuthController
 import com.inonvation.campbox.ui.qzxy.QzxyController
+import com.inonvation.campbox.ui.qzxy.QzxyAccountPage
 import com.inonvation.campbox.ui.qzxy.QzxyUiState
 import com.inonvation.campbox.data.qzxy.QzxyBluetoothScanner
 import com.inonvation.campbox.data.qzxy.QzxyNearbyDevice
@@ -284,7 +285,7 @@ class AppViewModel(
         quickLinkStore?.let {
             _state.update { s -> s.copy(quickLinks = it.getLinks(), quickLinksEnabled = it.isEnabled()) }
         }
-        _state.update { s -> s.copy(signInDoneToday = signInRunner.isSignedInToday()) }
+        _state.update { it.copy(signInDoneToday = signInRunner.isSignedInToday()) }
         if (repository.localToken() != null) {
             refreshDevices()
             refreshBalance()
@@ -634,6 +635,13 @@ class AppViewModel(
     fun qzxyDismissLogoutConfirm() = qzxyController.dismissLogoutConfirm()
     fun qzxyRefreshWallet() = qzxyController.refreshWallet()
     fun qzxyLoadUseCode() = qzxyController.loadUseCode()
+    fun qzxyShowWallet() = qzxyController.showAccountPage(QzxyAccountPage.Wallet)
+    fun qzxyShowUseCode() = qzxyController.showAccountPage(QzxyAccountPage.UseCode)
+    fun qzxyDismissAccount() = qzxyController.dismissAccountPage()
+    fun qzxyGenerateUseCode() = qzxyController.generateUseCode()
+    fun qzxyClaimUseCode() = qzxyController.claimUseCode()
+    fun qzxySetUseCodeEnabled(enabled: Boolean) = qzxyController.setUseCodeEnabled(enabled)
+    fun qzxyDiscardUseCodeCandidate() = qzxyController.discardUseCodeCandidate()
     fun qzxyStartScan() = qzxyController.startScan()
     fun qzxyStopScan() = qzxyController.stopScan()
     fun qzxyOnScanPermissionDenied() = qzxyController.onScanPermissionDenied()

@@ -304,6 +304,26 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
             StandardCard {
                 Column {
                     ClickableRow(
+                        title = "查询钱包余额",
+                        subtitle = if (state.qzxy.loggedIn) "趣智钱包 ${state.qzxy.wallet?.balanceText ?: "—"}" else "登录趣智账号后查询",
+                        onClick = {
+                            vm.dismissSettings()
+                            vm.qzxyShowWallet()
+                        },
+                        hapticEnabled = state.hapticEnabled,
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = Spacings.md))
+                    ClickableRow(
+                        title = "使用码",
+                        subtitle = "查看、领取或开关热水器键盘使用码",
+                        onClick = {
+                            vm.dismissSettings()
+                            vm.qzxyShowUseCode()
+                        },
+                        hapticEnabled = state.hapticEnabled,
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = Spacings.md))
+                    ClickableRow(
                         title = "绑定设备",
                         subtitle = state.qzxy.boundDevice?.name ?: "未绑定，去扫描或手输 MAC",
                         onClick = {

@@ -1,5 +1,7 @@
 package com.inonvation.campbox.data.qzxy
 
+import java.math.RoundingMode
+
 // ── 统一响应包 ──
 // 趣智所有接口返回 {success, errorCode, errorMessage, msg, data}，
 // 与胖乖生活平台的 {code, msg, data} 不同，故独立建包不共用 ApiEnvelope。
@@ -91,7 +93,14 @@ data class QzxyWalletData(
     val accountRealMoney: Double? = null,
     val accountGivenMoney: Double? = null,
     val money: String? = null,
-)
+) {
+    /** money 已是元；数字字段在部分学校按厘返回，不能直接拿来补总余额。 */
+    val balanceText: String?
+        get() {
+            val total = money?.trim()?.toBigDecimalOrNull() ?: return null
+            return "¥${total.setScale(2, RoundingMode.HALF_UP).toPlainString()}"
+        }
+}
 
 // ── 设备 ──
 
@@ -253,13 +262,25 @@ data class QzxyBtUploadData(
     val deviceSnCode: String? = null,
 )
 
-/** 键盘使用码：无网设备（蓝牙款）在热水器键盘上输入此码即可开水 */
+/** 键盘使用码：在支持此功能的热水器键盘上输入，按机身提示使用。 */
 data class QzxyUseCodeData(
     val useCode: String? = null,
     val useCodeStatus: Int? = null,
     val useCodeRandom: String? = null,
     val useCodeStartTime: String? = null,
     val useCodeAutoCloseConfigDescription: String? = null,
+    val resetAvailability: Int? = null,
+    val resetAvailabilityWarMark: String? = null,
+) {
+    val code: String? get() = useCode?.takeIf { it.isNotBlank() }
+    val enabled: Boolean get() = useCodeStatus == 1
+    val canClaim: Boolean get() = resetAvailability != 0
+}
+
+/** generate 只返回候选码，调用 set 后才生效；不能直接覆盖当前使用码。 */
+data class QzxyGeneratedUseCode(
+    val useCode: String? = null,
+    val remainTimes: Int? = null,
 )
 
 data class QzxyStopResult(

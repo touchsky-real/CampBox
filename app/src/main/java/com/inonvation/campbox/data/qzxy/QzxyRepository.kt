@@ -91,10 +91,20 @@ class QzxyRepository(
     suspend fun wallet(): QzxyWalletData =
         call { api.getWallet(requireSession().queryFields()) }.data ?: error("未获取到钱包信息")
 
-    /** 键盘使用码：蓝牙款设备在热水器键盘上输入即可开水 */
-    suspend fun useCode(): String? {
-        val data = call { api.getUseCode(requireSession().queryFields()) }.data ?: return null
-        return data.useCode?.takeIf { data.useCodeStatus == 1 && it.isNotBlank() }
+    /** 保留未领取、已关闭等状态，不能都折叠成“获取中”。 */
+    suspend fun useCode(): QzxyUseCodeData =
+        call { api.getUseCode(requireSession().queryFields()) }.data ?: error("未获取到使用码信息")
+
+    suspend fun generateUseCode(): QzxyGeneratedUseCode =
+        call { api.generateUseCode(requireSession().authFields()) }.data
+            ?.takeIf { !it.useCode.isNullOrBlank() } ?: error("未获取到候选使用码")
+
+    suspend fun claimUseCode(code: String) {
+        call { api.setUseCode(code, requireSession().authFields()) }
+    }
+
+    suspend fun setUseCodeEnabled(enabled: Boolean) {
+        call { api.updateUseCodeStatus(if (enabled) 1 else 0, requireSession().authFields()) }
     }
 
     suspend fun deviceInfo(mac: String): QzxyDeviceInfo {

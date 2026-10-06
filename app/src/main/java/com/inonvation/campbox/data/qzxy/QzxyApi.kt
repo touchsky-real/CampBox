@@ -103,4 +103,24 @@ interface QzxyApi {
     /** 键盘使用码：在热水器键盘上输入即可开水（无网设备的官方开水方式） */
     @GET("account/useCode/new")
     suspend fun getUseCode(@QueryMap auth: Map<String, String>): QzxyEnvelope<QzxyUseCodeData>
+
+    /** 生成候选码（每天最多 20 次），此时尚未生效。 */
+    @FormUrlEncoded
+    @POST("account/useCode/new/generate")
+    suspend fun generateUseCode(@FieldMap auth: Map<String, String>): QzxyEnvelope<QzxyGeneratedUseCode>
+
+    /** 领取候选码（每天一次），须在生成后 3 分钟内调用。 */
+    @FormUrlEncoded
+    @POST("account/useCode/new/set")
+    suspend fun setUseCode(
+        @Field("useCode") useCode: String,
+        @FieldMap auth: Map<String, String>,
+    ): QzxyEnvelope<EmptyData>
+
+    @FormUrlEncoded
+    @POST("account/useCode/new/status/update")
+    suspend fun updateUseCodeStatus(
+        @Field("useCodeStatus") status: Int,
+        @FieldMap auth: Map<String, String>,
+    ): QzxyEnvelope<EmptyData>
 }

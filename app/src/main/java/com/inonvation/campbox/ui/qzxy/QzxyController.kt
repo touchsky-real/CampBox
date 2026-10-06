@@ -1,5 +1,7 @@
 package com.inonvation.campbox.ui.qzxy
 
+import android.os.SystemClock
+
 import com.inonvation.campbox.data.qzxy.QzxyActiveShower
 import com.inonvation.campbox.data.qzxy.QzxyApiConfig
 import com.inonvation.campbox.data.qzxy.QzxyApiException
@@ -11,6 +13,7 @@ import com.inonvation.campbox.data.qzxy.QzxyRepository
 import com.inonvation.campbox.data.qzxy.QzxySessionExpiredException
 import com.inonvation.campbox.data.qzxy.QzxySettleResult
 import com.inonvation.campbox.ui.AppUiState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -45,6 +48,12 @@ class QzxyController(
     private val enrichSemaphore = Semaphore(4)
     private var timerJob: Job? = null
     private var scanTimeoutJob: Job? = null
+    private var walletJob: Job? = null
+    private var useCodeJob: Job? = null
+    private var candidateTimerJob: Job? = null
+    private var candidateDeadline: Long = 0
+    private var accountGeneration: Long = 0
+    private var pendingAccountPage: QzxyAccountPage? = null
 
     // ── 会话恢复 ──
 
@@ -63,7 +72,6 @@ class QzxyController(
             )
         }
         refreshWallet()
-        loadUseCode()
         restoreActiveOrder()
         refreshBoundDeviceInfo()
     }
@@ -105,7 +113,10 @@ class QzxyController(
     // ── 登录 ──
 
     fun showLoginSheet() = updateQzxy { it.copy(showLoginSheet = true, phone = "", password = "", loginError = null) }
-    fun dismissLoginSheet() = updateQzxy { it.copy(showLoginSheet = false) }
+    fun dismissLoginSheet() {
+        pendingAccountPage = null
+        updateQzxy { it.copy(showLoginSheet = false) }
+    }
 
     fun updatePhone(value: String) = updateQzxy { it.copy(phone = value.filter { c -> c.isDigit() }.take(11)) }
     fun updatePassword(value: String) = updateQzxy { it.copy(password = value) }
@@ -113,6 +124,7 @@ class QzxyController(
 
     fun login() = scope.launch {
         val q = state.value.qzxy
+        if (q.loggingIn) return@launch
         val phone = q.phone.trim()
         val error = when {
             !PHONE_REGEX.matches(phone) -> "请输入正确格式的手机号"
@@ -126,29 +138,32 @@ class QzxyController(
         updateQzxy { it.copy(loggingIn = true, loginError = null) }
         runCatching { repository.login(phone, q.password) }
             .onSuccess { session ->
-        updateQzxy {
-            it.copy(
-                loggedIn = true,
-                userName = session.userName,
-                accountPhone = maskPhone(session.telephone),
-                loggingIn = false,
-                showLoginSheet = false,
-                phone = "",
-                password = "",
-                boundDevice = repository.readBoundDevice(),
-            )
-        }
+                stopEverything()
+                updateQzxy {
+                    QzxyUiState(
+                        loggedIn = true,
+                        userName = session.userName,
+                        accountPhone = maskPhone(session.telephone),
+                        boundDevice = repository.readBoundDevice(),
+                    )
+                }
                 showToast("趣智校园登录成功")
                 refreshWallet()
                 restoreActiveOrder()
                 refreshBoundDeviceInfo()
+                pendingAccountPage?.let { page ->
+                    pendingAccountPage = null
+                    showAccountPage(page)
+                }
             }
             .onFailure { e ->
+                if (e is CancellationException) throw e
                 updateQzxy { it.copy(loggingIn = false, loginError = e.message ?: "登录失败") }
             }
     }
 
     fun logout() {
+        pendingAccountPage = null
         stopEverything()
         repository.logout()
         updateQzxy {
@@ -166,37 +181,213 @@ class QzxyController(
 
     /** 被挤号或会话过期：清空趣智全部状态并引导重新登录 */
     private fun handleSessionExpired() {
+        pendingAccountPage = state.value.qzxy.accountPage
         stopEverything()
         repository.logout()
-        updateQzxy { QzxyUiState() }
+        updateQzxy { QzxyUiState(showLoginSheet = true) }
         showError("趣智校园登录已失效，请重新登录")
     }
 
     private fun stopEverything() {
+        // 先作废请求代次，避免退出或切换账号后旧响应写回新会话。
+        accountGeneration++
+        walletJob?.cancel()
+        useCodeJob?.cancel()
+        candidateTimerJob?.cancel()
+        candidateDeadline = 0
         stopTimer()
         stopScanInternal()
         repository.closeBt()
     }
 
-    // ── 钱包 ──
+    // ── 钱包与使用码 ──
 
-    fun refreshWallet() = scope.launch {
-        if (!state.value.qzxy.loggedIn) return@launch
-        updateQzxy { it.copy(loadingWallet = true) }
-        runCatching { repository.wallet() }
-            .onSuccess { wallet -> updateQzxy { it.copy(wallet = wallet, loadingWallet = false) } }
-            .onFailure { e ->
-                updateQzxy { it.copy(loadingWallet = false) }
-                if (e is QzxySessionExpiredException) handleSessionExpired()
-                else showError(e.message ?: "查询钱包失败")
-            }
+    private fun accountRequestIsCurrent(generation: Long): Boolean =
+        generation == accountGeneration && state.value.qzxy.loggedIn
+
+    fun showAccountPage(page: QzxyAccountPage) {
+        if (!state.value.qzxy.loggedIn) {
+            pendingAccountPage = page
+            showLoginSheet()
+            return
+        }
+        if (state.value.qzxy.useCodeAction != null) return
+        updateQzxy { it.copy(accountPage = page) }
+        when (page) {
+            QzxyAccountPage.Wallet -> refreshWallet()
+            QzxyAccountPage.UseCode -> loadUseCode()
+        }
     }
 
-    /** 拉取键盘使用码（蓝牙款设备的开水兜底方式），静默失败不打扰 */
-    fun loadUseCode() = scope.launch {
-        runCatching { repository.useCode() }
-            .onSuccess { code -> if (code != null) updateQzxy { it.copy(useCode = code) } }
-            .onFailure { e -> if (e is QzxySessionExpiredException) handleSessionExpired() }
+    fun dismissAccountPage() {
+        if (state.value.qzxy.useCodeAction != null) return
+        discardUseCodeCandidate()
+        updateQzxy { it.copy(accountPage = null) }
+    }
+
+    fun refreshWallet() {
+        val q = state.value.qzxy
+        if (!q.loggedIn || q.loadingWallet) return
+        val generation = accountGeneration
+        updateQzxy { it.copy(loadingWallet = true, wallet = null, walletError = null) }
+        walletJob = scope.launch {
+            try {
+                val wallet = repository.wallet()
+                if (accountRequestIsCurrent(generation)) updateQzxy { it.copy(wallet = wallet) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (accountRequestIsCurrent(generation)) {
+                    if (e is QzxySessionExpiredException) handleSessionExpired()
+                    else updateQzxy { it.copy(walletError = accountError(e, "查询余额失败，请重试")) }
+                }
+            } finally {
+                if (accountRequestIsCurrent(generation)) updateQzxy { it.copy(loadingWallet = false) }
+            }
+        }
+    }
+
+    fun loadUseCode() {
+        val q = state.value.qzxy
+        if (!q.loggedIn || q.loadingUseCode || q.useCodeAction != null) return
+        val generation = accountGeneration
+        discardUseCodeCandidate()
+        updateQzxy { it.copy(loadingUseCode = true, useCodeData = null, useCodeError = null, useCodeRemainingGenerations = null) }
+        useCodeJob = scope.launch {
+            try {
+                val data = repository.useCode()
+                if (accountRequestIsCurrent(generation)) updateQzxy { it.copy(useCodeData = data) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (accountRequestIsCurrent(generation)) {
+                    if (e is QzxySessionExpiredException) handleSessionExpired()
+                    else updateQzxy { it.copy(useCodeError = accountError(e, "查询使用码失败，请重试")) }
+                }
+            } finally {
+                if (accountRequestIsCurrent(generation)) updateQzxy { it.copy(loadingUseCode = false) }
+            }
+        }
+    }
+
+    fun generateUseCode() {
+        val q = state.value.qzxy
+        if (!canChangeUseCode(q)) return
+        val data = q.useCodeData ?: return
+        if (!data.canClaim) {
+            updateQzxy { it.copy(useCodeError = data.resetAvailabilityWarMark ?: "每天只能领取一次使用码") }
+            return
+        }
+        if (q.useCodeRemainingGenerations == 0) {
+            updateQzxy { it.copy(useCodeError = "今日换码次数已用完，请明天再试") }
+            return
+        }
+        discardUseCodeCandidate()
+        performUseCodeAction(QzxyUseCodeAction.Generate) { generation ->
+            val startedAt = SystemClock.elapsedRealtime()
+            val candidate = repository.generateUseCode()
+            requireCurrentAccount(generation)
+            candidateDeadline = startedAt + 180_000L
+            updateQzxy {
+                it.copy(useCodeCandidate = candidate.useCode, useCodeRemainingGenerations = candidate.remainTimes,
+                    useCodeSecondsLeft = 180)
+            }
+            startCandidateTimer()
+        }
+    }
+
+    fun claimUseCode() {
+        val q = state.value.qzxy
+        if (!canChangeUseCode(q)) return
+        val code = q.useCodeCandidate ?: return
+        if (SystemClock.elapsedRealtime() >= candidateDeadline) {
+            updateQzxy { it.copy(useCodeSecondsLeft = 0, useCodeError = "候选码已过期，请换一个后再领取") }
+            return
+        }
+        performUseCodeAction(QzxyUseCodeAction.Claim) { generation ->
+            repository.claimUseCode(code)
+            requireCurrentAccount(generation)
+            discardUseCodeCandidate()
+            // set 已成功但随后的查询仍可能失败；清空旧码，不能把旧码显示为仍然有效。
+            updateQzxy { it.copy(useCodeData = null) }
+            val current = repository.useCode()
+            requireCurrentAccount(generation)
+            updateQzxy { it.copy(useCodeData = current) }
+            showToast("使用码已领取")
+        }
+    }
+
+    fun setUseCodeEnabled(enabled: Boolean) {
+        val q = state.value.qzxy
+        if (!canChangeUseCode(q) || q.useCodeData?.code == null) return
+        performUseCodeAction(if (enabled) QzxyUseCodeAction.Enable else QzxyUseCodeAction.Disable) { generation ->
+            repository.setUseCodeEnabled(enabled)
+            requireCurrentAccount(generation)
+            updateQzxy { it.copy(useCodeData = null) }
+            val current = repository.useCode()
+            requireCurrentAccount(generation)
+            updateQzxy { it.copy(useCodeData = current) }
+            showToast(if (enabled) "使用码已开启" else "使用码已关闭")
+        }
+    }
+
+    private fun canChangeUseCode(q: QzxyUiState): Boolean =
+        q.loggedIn && !q.loadingUseCode && q.useCodeAction == null
+
+    private fun performUseCodeAction(action: QzxyUseCodeAction, block: suspend (Long) -> Unit) {
+        val generation = accountGeneration
+        updateQzxy { it.copy(useCodeAction = action, useCodeError = null) }
+        useCodeJob = scope.launch {
+            try {
+                block(generation)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (accountRequestIsCurrent(generation)) {
+                    if (e is QzxySessionExpiredException) handleSessionExpired()
+                    else {
+                        // 请求超时也可能已在服务端生效，先隐藏当前码，要求重新查询确认。
+                        if (action != QzxyUseCodeAction.Generate) {
+                            discardUseCodeCandidate()
+                            updateQzxy { it.copy(useCodeData = null) }
+                        }
+                        val fallback = if (action == QzxyUseCodeAction.Generate) "换码失败，请重试"
+                            else "操作结果未确认，请重新查询使用码"
+                        updateQzxy { it.copy(useCodeError = accountError(e, fallback)) }
+                    }
+                }
+            } finally {
+                if (accountRequestIsCurrent(generation)) updateQzxy { it.copy(useCodeAction = null) }
+            }
+        }
+    }
+
+    fun discardUseCodeCandidate() {
+        candidateTimerJob?.cancel()
+        candidateDeadline = 0
+        updateQzxy { it.copy(useCodeCandidate = null, useCodeSecondsLeft = 0) }
+    }
+
+    private fun startCandidateTimer() {
+        candidateTimerJob?.cancel()
+        candidateTimerJob = scope.launch {
+            while (isActive) {
+                val seconds = ((candidateDeadline - SystemClock.elapsedRealtime() + 999) / 1000).coerceAtLeast(0).toInt()
+                updateQzxy { it.copy(useCodeSecondsLeft = seconds) }
+                if (seconds == 0) break
+                delay(1000)
+            }
+        }
+    }
+
+    private fun requireCurrentAccount(generation: Long) {
+        if (!accountRequestIsCurrent(generation)) throw CancellationException("趣智账号已切换")
+    }
+
+    private fun accountError(error: Exception, fallback: String): String = when (error) {
+        is java.io.IOException -> "网络连接失败，请检查网络后重试"
+        is QzxyApiException -> error.message ?: fallback
+        else -> fallback
     }
 
     // ── 绑定设备 ──

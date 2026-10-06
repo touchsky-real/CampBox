@@ -29,7 +29,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -38,7 +37,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -46,7 +44,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -142,7 +139,7 @@ fun QzxyShowerSection(state: AppUiState, vm: AppViewModel, haptic: HapticFeedbac
                         when (p) {
                             ShowerPhase.Guest -> QzxyHintInfo("未连接，登录趣智账号后可控制热水器")
                             ShowerPhase.Unbound -> QzxyHintInfo("扫描附近热水器，或输入机身 MAC 地址绑定")
-                            ShowerPhase.Bound -> QzxyBoundInfo(q, vm)
+                            ShowerPhase.Bound -> QzxyBoundInfo(q)
                             ShowerPhase.Starting -> QzxyStepInfo((q.showerFlow as? QzxyShowerState.Starting)?.step ?: "正在准备…")
                             ShowerPhase.Stopping -> QzxyStepInfo((q.showerFlow as? QzxyShowerState.Stopping)?.step ?: "正在结束…")
                             ShowerPhase.Running -> QzxyRunningInfo(q)
@@ -286,18 +283,12 @@ fun QzxyShowerSection(state: AppUiState, vm: AppViewModel, haptic: HapticFeedbac
         }
     }
 
-    if (q.showLoginSheet) {
-        QzxyLoginSheet(qzxy = q, vm = vm)
-    }
     // 换设备弹层：点设备行弹出（与开水卡的设备选择交互一致）
     if (q.showDevicePicker && q.loggedIn && q.boundDevice != null) {
         QzxyDeviceSheet(q = q, vm = vm, haptic = haptic, hapticEnabled = state.hapticEnabled, requestBle = ::requestBleThen, context = context)
     }
     if (q.showManualMacDialog) {
         QzxyManualMacDialog(qzxy = q, vm = vm)
-    }
-    if (q.showLogoutConfirm) {
-        QzxyLogoutConfirmDialog(qzxy = q, vm = vm)
     }
     if (showErrorDetail) {
         QzxyErrorDetailDialog(q = q) { showErrorDetail = false }
@@ -374,37 +365,12 @@ private fun QzxyStatusDot(color: androidx.compose.ui.graphics.Color) {
     )
 }
 
-/** 已绑定状态区：钱包 + 设备在线/通信类型与预扣 */
+/** 已绑定状态区：设备在线/通信类型与预扣；钱包与使用码由账户入口管理。 */
 @Composable
-private fun QzxyBoundInfo(q: QzxyUiState, vm: AppViewModel) {
+private fun QzxyBoundInfo(q: QzxyUiState) {
     val info = q.selectedDevice
     val offline = info?.onlineStatusId == 0
     val bluetoothDevice = info?.communicationTypeId == 0
-    val walletText = q.wallet?.money?.toDoubleOrNull()?.let { "¥%.2f".format(it) } ?: "-"
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "钱包 $walletText",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.weight(1f),
-        )
-        IconButton(onClick = { vm.qzxyRefreshWallet() }, modifier = Modifier.size(28.dp)) {
-            if (q.loadingWallet) {
-                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-            } else {
-                Icon(
-                    Icons.Outlined.Refresh,
-                    contentDescription = "刷新钱包",
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
     val statusLine = buildString {
         append(info?.onlineText ?: "状态未知")
         info?.communicationText?.let { append(" · ").append(it) }
@@ -428,24 +394,10 @@ private fun QzxyBoundInfo(q: QzxyUiState, vm: AppViewModel) {
         bluetoothDevice -> {
             Spacer(Modifier.height(Spacings.xs))
             Text(
-                "蓝牙款设备：开阀指令由手机蓝牙直发热水器，需站在设备旁操作。键盘使用码是备用开水方式。",
+                "蓝牙款请在设备旁开启蓝牙，或点「使用码」在机身输入。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (q.useCode == null) {
-                LaunchedEffect(Unit) { vm.qzxyLoadUseCode() }
-                Text(
-                    "备用键盘使用码：获取中…",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                Text(
-                    "备用键盘使用码 ${q.useCode}",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
         }
         offline -> {
             Spacer(Modifier.height(Spacings.xs))
@@ -673,7 +625,7 @@ private fun QzxyDeviceRow(device: QzxyNearbyDevice, querying: Boolean, selected:
 
 /** 退出趣智登录二次确认；洗澡中追加计费警告 */
 @Composable
-private fun QzxyLogoutConfirmDialog(qzxy: QzxyUiState, vm: AppViewModel) {
+fun QzxyLogoutConfirmDialog(qzxy: QzxyUiState, vm: AppViewModel) {
     AlertDialog(
         onDismissRequest = { vm.qzxyDismissLogoutConfirm() },
         title = { Text("确认退出趣智登录", fontWeight = FontWeight.SemiBold) },

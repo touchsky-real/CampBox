@@ -6,6 +6,7 @@ import com.inonvation.campbox.data.qzxy.QzxyDeviceInfo
 import com.inonvation.campbox.data.qzxy.QzxyNearbyDevice
 import com.inonvation.campbox.data.qzxy.QzxySettleResult
 import com.inonvation.campbox.data.qzxy.QzxyWalletData
+import com.inonvation.campbox.data.qzxy.QzxyUseCodeData
 
 /**
  * 趣智校园模块的全部 UI 状态，作为整体挂进 AppUiState（val qzxy），
@@ -46,10 +47,21 @@ data class QzxyUiState(
     // ── 钱包 ──
     val wallet: QzxyWalletData? = null,
     val loadingWallet: Boolean = false,
+    val walletError: String? = null,
 
-    // ── 键盘使用码（蓝牙款设备的开水兜底） ──
-    val useCode: String? = null,
+    // ── 账户查询与键盘使用码（不依赖绑定设备） ──
+    val accountPage: QzxyAccountPage? = null,
+    val useCodeData: QzxyUseCodeData? = null,
+    val loadingUseCode: Boolean = false,
+    val useCodeError: String? = null,
+    val useCodeAction: QzxyUseCodeAction? = null,
+    val useCodeCandidate: String? = null,
+    val useCodeRemainingGenerations: Int? = null,
+    val useCodeSecondsLeft: Int = 0,
 )
+
+enum class QzxyAccountPage { Wallet, UseCode }
+enum class QzxyUseCodeAction { Generate, Claim, Enable, Disable }
 
 /**
  * 一次洗澡的状态机，仿照 UnlockFlowState 的写法。
