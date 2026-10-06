@@ -1,8 +1,18 @@
-﻿plugins {
+import java.security.KeyStore
+import java.security.cert.X509Certificate
+
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val releaseKeystore = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }?.let { File(it) }
+val releaseStorePassword = System.getenv("KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("KEY_ALIAS")
+val releaseKeyPassword = System.getenv("KEY_PASSWORD")
+val releaseSigningConfigured = releaseKeystore?.isFile == true &&
+    listOf(releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
 
 android {
     namespace = "com.inonvation.campbox"
@@ -15,14 +25,15 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
-        // CI 注入的签名信息（GitHub Secrets 解码后的 keystore 文件 + 密码）
-        val ciKeystoreFile = System.getenv("KEYSTORE_FILE")
-        if (ciKeystoreFile != null && File(ciKeystoreFile).exists()) {
+        // 本机环境变量或 CI Secrets 提供，Release 不再回退调试证书。
+        if (releaseSigningConfigured) {
             create("ciRelease") {
-                storeFile = File(ciKeystoreFile)
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
+                storeFile = releaseKeystore
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
@@ -44,12 +55,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // CI 配置了 Secrets 则用正式签名，否则回退 debug.keystore（保持与历史版本签名一致）
-            signingConfig = if (signingConfigs.findByName("ciRelease") != null) {
-                signingConfigs.getByName("ciRelease")
-            } else {
-                signingConfigs.getByName("fixedDebug")
-            }
+            signingConfig = signingConfigs.findByName("ciRelease")
         }
     }
 
@@ -106,4 +112,25 @@ tasks.register<Copy>("archiveDebugApk") {
     }
     into(rootProject.layout.projectDirectory.dir("archive"))
     rename { "app-debug-v${version}.apk" }
+}
+
+// 放在 Release 构建入口检查，未配置正式密钥仍可运行 Debug 编译、测试和 Lint。
+val requireReleaseSigning = tasks.register("requireReleaseSigning") {
+    doLast {
+        check(releaseSigningConfigured) {
+            "Release 必须配置 KEYSTORE_FILE、KEYSTORE_PASSWORD、KEY_ALIAS、KEY_PASSWORD，禁止使用调试密钥"
+        }
+        val signingStore = KeyStore.getInstance(releaseKeystore!!, releaseStorePassword!!.toCharArray())
+        check(signingStore.isKeyEntry(releaseKeyAlias)) { "正式签名别名没有对应私钥" }
+        val certificate = signingStore.getCertificate(releaseKeyAlias) as? X509Certificate
+            ?: error("正式签名证书不可用")
+        val debugStore = KeyStore.getInstance(file("debug.keystore"), "android".toCharArray())
+        check(!certificate.encoded.contentEquals(debugStore.getCertificate("androiddebugkey").encoded) &&
+            !certificate.subjectX500Principal.name.contains("CN=Android Debug", ignoreCase = true)) {
+            "Release 不能使用调试证书"
+        }
+    }
+}
+tasks.configureEach {
+    if (name == "preReleaseBuild") dependsOn(requireReleaseSigning)
 }

@@ -37,7 +37,7 @@ jobs:
       - name: 赋予 gradlew 执行权限
         run: chmod +x gradlew
 
-      # 配置了 4 个 Secrets 则用正式签名；否则回退仓库内 keystore（见 README「签名」一节）
+      # Release 必须使用 GitHub Secrets 中的正式签名，禁止回退调试密钥。
       - name: 解码签名密钥
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -45,10 +45,13 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "未配置签名 Secrets，使用仓库内置 keystore 签名"
-            exit 0
-          fi
+          for KEY in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!KEY}" ]; then
+              echo "缺少正式签名 Secret：$KEY，停止发布"
+              exit 1
+            fi
+          done
+          umask 077
           echo "$KEYSTORE_BASE64" | base64 -d > "$HOME/release.keystore"
           echo "KEYSTORE_FILE=$HOME/release.keystore" >> "$GITHUB_ENV"
           echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
@@ -71,6 +74,18 @@ jobs:
             -PbuildVersionCode="$CODE"
           cp app/build/outputs/apk/release/app-release.apk \
              "app/build/outputs/apk/release/CampBox-v${VERSION}.apk"
+
+      - name: 验证 Release APK 签名
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk > signature-check.txt
+          cat signature-check.txt
+          grep -q 'Verified using v2 scheme .*: true' signature-check.txt
+          grep -q 'Verified using v3 scheme .*: true' signature-check.txt
+          if grep -q 'CN=Android Debug' signature-check.txt; then
+            echo "检测到调试证书，停止发布"
+            exit 1
+          fi
 
       - name: 生成 Release 内容
         run: |

@@ -43,7 +43,7 @@
 .\gradlew.bat :app:assembleRelease
 ```
 
-APK 输出到 `app/build/outputs/apk/`。升级安装需沿用原有签名，不要删除或重新生成 `app/debug.keystore`。
+APK 输出到 `app/build/outputs/apk/`。Debug 沿用 `app/debug.keystore`。Release 必须配置正式密钥环境变量 `KEYSTORE_FILE`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`，同时开启 V2、V3 签名；缺失配置或使用调试证书时构建失败。GitHub Actions 从同名 Secrets 读取密码与别名，密钥文件由 `KEYSTORE_BASE64` 解码。升级安装须保持正式签名证书一致。
 
 源码位于 `app/src/main/java/com/inonvation/campbox/`，其中 `data/` 负责接口与存储，`ui/` 负责页面和状态管理，两个目录下的 `qzxy/` 为趣智校园模块。测试位于 `app/src/test/`，协议和适配说明见 [docs](docs/)。
 
