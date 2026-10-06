@@ -81,7 +81,7 @@ object DeviceErrorDiagnosis {
             // 积分不足
             msg.contains("积分") && msg.contains("不足") || msg.contains("余额") && msg.contains("不足") ->
                 "积分余额不足" to listOf(
-                    "在积分任务页面刷取更多积分",
+                    "关闭「使用积分抵扣」后重试，或前往胖乖生活 App 查看积分",
                     "检查积分余额",
                 )
 

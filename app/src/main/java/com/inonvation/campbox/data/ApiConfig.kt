@@ -11,9 +11,7 @@ object ApiConfig {
     // 对齐参考 APK 的 HeadInterceptor.buildUserAgent()，扫码同样需要完整客户端版本标识。
     const val USER_AGENT =
         "QEUser/$VERSION (com.qiekj.user; build:$VERSION_CODE; Android 14; userChannel:android_app; version:$VERSION) OkHttp/4.12.0"
-    const val POINTS_USER_AGENT = USER_AGENT
 
     const val CONTENT_TYPE = "application/x-www-form-urlencoded;charset=UTF-8"
     const val ANDROID_SECRET = "nFU9pbG8YQoAe1kFh+E7eyrdlSLglwEJeA0wwHB1j5o="
-    const val ALIPAY_SECRET = "Ew+ZSuppXZoA9YzBHgHmRvzt0Bw1CpwlQQtSl49QNhY="
 }

@@ -14,11 +14,9 @@ import com.inonvation.campbox.data.DEFAULT_QUICK_LINKS
 import com.inonvation.campbox.data.PRESET_LINK_COUNT
 import com.inonvation.campbox.data.DeviceIdProvider
 import com.inonvation.campbox.data.DeviceItem
-import com.inonvation.campbox.data.PointsTaskRunner
 import com.inonvation.campbox.data.UserPrefsStore
 import com.inonvation.campbox.data.QuickLinkStore
 import com.inonvation.campbox.data.SignInRunner
-import com.inonvation.campbox.data.TaskCancelledException
 import com.inonvation.campbox.data.TokenExpiredException
 import com.inonvation.campbox.data.UnlockException
 import com.inonvation.campbox.data.UpdateChecker
@@ -130,63 +128,8 @@ class AppViewModel(
 
     private val signInRunner = SignInRunner({ repository.localToken() }, context) { deviceId }
 
-    // 与主客户端共享的稳定设备标识（模拟官方 OAID，登录/请求/积分任务统一使用）
+    // 与主客户端共享的稳定设备标识（模拟官方 OAID，登录/请求/签到统一使用）
     private val deviceId by lazy { DeviceIdProvider.deviceId(context) }
-
-    // ── 积分任务 ──
-    private var pointsRunner: PointsTaskRunner? = null
-    private var pointsJob: Job? = null
-
-    fun startPointsTask() {
-        if (state.value.pointsRunning) return
-        if (!state.value.hasToken) {
-            showError("请先登录")
-            return
-        }
-        val runner = PointsTaskRunner({ repository.localToken() }, context) { deviceId }
-        pointsRunner = runner
-        _state.update { it.copy(pointsRunning = true, pointsPaused = false, pointsLog = listOf("任务启动...")) }
-        pointsJob = viewModelScope.launch {
-            val log: suspend (String) -> Unit = { msg ->
-                _state.update { s -> s.copy(pointsLog = (s.pointsLog + msg).takeLast(200)) }
-            }
-            try {
-                runner.run(ApiConfig.POINTS_USER_AGENT, log)
-                _state.update { it.copy(pointsRunning = false) }
-                refreshBalance()
-                _state.update { s -> s.copy(signInDoneToday = true) }
-                showToast("积分任务完成")
-            } catch (e: TaskCancelledException) {
-                _state.update { s -> s.copy(pointsRunning = false, pointsLog = s.pointsLog + "任务已停止") }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                val msg = e.message ?: "任务异常"
-                if (msg == "token") {
-                    _state.update { it.copy(pointsRunning = false) }
-                    authController.handleTokenExpired()
-                } else {
-                    _state.update { s -> s.copy(pointsRunning = false, pointsLog = s.pointsLog + "任务失败：$msg") }
-                }
-            }
-        }
-    }
-
-    fun stopPointsTask() {
-        pointsRunner?.cancelled = true
-        pointsJob?.cancel()
-        _state.update { s -> s.copy(pointsRunning = false, pointsLog = s.pointsLog + "已停止") }
-    }
-
-    fun togglePausePointsTask() {
-        val runner = pointsRunner ?: return
-        runner.paused = !runner.paused
-        _state.update { it.copy(pointsPaused = runner.paused) }
-    }
-
-    fun clearPointsLog() {
-        _state.update { it.copy(pointsLog = emptyList()) }
-    }
 
     // ── 校园网认证 ──
     private val campusNetStore by lazy { CampusNetStore(context) }
@@ -347,7 +290,7 @@ class AppViewModel(
             refreshBalance()
             refreshTodayWater()
         }
-        // 打开 App 时自动签到（仅签到；首页浏览等积分任务仍需手动执行）
+        // 打开 App 时自动签到
         autoSignInOnLaunch()
         // 打开 App 时自动连接校园网
         autoCampusNetOnLaunch()
@@ -375,9 +318,7 @@ class AppViewModel(
     fun autoSignInOnLaunch() {
         if (!state.value.autoSignInEnabled) return
         if (!state.value.hasToken) return
-        // 签到标记存在两处（手动签到写 ad_video_state，积分任务写 points_task），
-        // 任一为真都视为今天已签过——积分任务流程本身包含签到，无需重复请求
-        if (signInRunner.isSignedInToday() || PointsTaskRunner.isPointsDoneToday(context)) return
+        if (signInRunner.isSignedInToday()) return
         if (state.value.signingIn) return
         signInNow()
     }

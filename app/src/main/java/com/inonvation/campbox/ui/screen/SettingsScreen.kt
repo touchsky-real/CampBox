@@ -258,7 +258,7 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                 Column {
                     SettingSwitchRow(
                         title = "启动时自动签到",
-                        subtitle = "打开 App 自动完成每日签到；首页浏览等积分任务仍需手动点「刷积分」",
+                        subtitle = "打开 App 时自动完成每日签到",
                         checked = state.autoSignInEnabled,
                         onCheckedChange = { vm.toggleAutoSignIn() },
                         hapticEnabled = state.hapticEnabled,

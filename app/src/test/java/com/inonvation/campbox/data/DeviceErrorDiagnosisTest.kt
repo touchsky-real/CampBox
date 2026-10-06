@@ -83,7 +83,7 @@ class DeviceErrorDiagnosisTest {
     fun diagnose_pointsInsufficient_returnsPointsAdvice() {
         val result = DeviceErrorDiagnosis.diagnose(null, "积分不足", "启动解锁")
         assertEquals("积分余额不足", result.primaryReason)
-        assertTrue(result.suggestions.any { it.contains("积分任务") })
+        assertTrue(result.suggestions.any { it.contains("关闭") && it.contains("积分抵扣") })
     }
 
     @Test

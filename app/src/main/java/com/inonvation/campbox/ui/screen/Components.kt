@@ -540,7 +540,7 @@ fun LoginCard(
                 Column {
                     Spacer(Modifier.height(Spacings.sm))
                     Text(
-                        "粘贴从官方 App 抓取的 Token 直接登录。注意：Token 登录的会话绑定原设备，积分任务可能受限，建议优先用手机号登录",
+                        "粘贴从官方 App 获取的 Token 直接登录。Token 的会话绑定原设备，建议优先用手机号登录",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

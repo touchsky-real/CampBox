@@ -67,12 +67,6 @@ data class AppUiState(
     val totalWaterCount: Int = 0,
     val orderHistory: List<OrderHistoryItem> = emptyList(),
 
-    // ── 积分任务 ──
-    val pointsRunning: Boolean = false,
-    val pointsPaused: Boolean = false,
-    val pointsLog: List<String> = emptyList(),
-    val pointsTodayEarned: Int = 0,
-
     // ── 校园网 ──
     val campusUsername: String = "",
     val campusPassword: String = "",
