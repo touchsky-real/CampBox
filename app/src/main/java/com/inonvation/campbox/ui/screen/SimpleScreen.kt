@@ -1,4 +1,4 @@
-package com.inonvation.campbox.ui.screen
+﻿package com.inonvation.campbox.ui.screen
 
 import android.Manifest
 import android.content.Intent
@@ -222,7 +222,7 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                 }
 
                 if (state.hasToken) {
-                    // 账户状态行：小票 + 累计开水 + 签到按钮
+                    // 账户状态行：本机累计花费 + 累计开水 + 签到按钮
                     item { AccountStripRow(state, vm, haptic) }
 
                     // 开水
@@ -333,7 +333,7 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                 Column {
                     successResult.note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                     DetailRow("订单原价", if (successResult.originPrice == "-") "待确认" else "¥${successResult.originPrice}")
-                    DetailRow("花费小票", successResult.ticketCost)
+                    DetailRow("小票支付", if (successResult.ticketCost == "-") "未显示抵扣" else "¥${successResult.ticketCost}")
                     DetailRow("积分抵扣", when {
                         successResult.integralCost.toBigDecimalOrNull()?.signum() == 1 ->
                             "¥${successResult.integralCost}"
@@ -406,7 +406,7 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
     }
 }
 
-/** 顶栏下的一条账户状态行：小票 + 累计开水 + 签到按钮 */
+/** 顶栏下的一条账户状态行：本机累计花费 + 累计开水 + 签到按钮 */
 @Composable
 private fun AccountStripRow(state: AppUiState, vm: AppViewModel, haptic: HapticFeedback) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -415,9 +415,8 @@ private fun AccountStripRow(state: AppUiState, vm: AppViewModel, haptic: HapticF
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val ticket = state.balance?.ticketText?.let { "¥$it" } ?: "-"
             Text(
-                "小票 $ticket · 累计开水 ${state.totalWaterCount} 次",
+                "累计花费 ¥${state.totalWaterSpending} · 开水 ${state.totalWaterCount} 次",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
@@ -595,7 +594,7 @@ private fun WaterCard(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                 ) {
                                     Text(
-                                        if (r.originPrice == "-") "账单待确认" else "¥${com.inonvation.campbox.data.calculateActualCost(r)}",
+                                        if (r.originPrice == "-") "账单待确认" else "¥${com.inonvation.campbox.data.calculateWaterSpending(r)}",
                                         style = MaterialTheme.typography.headlineSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary,

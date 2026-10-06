@@ -1,10 +1,11 @@
-package com.inonvation.campbox.ui
+﻿package com.inonvation.campbox.ui
 
 import com.inonvation.campbox.data.BalanceData
 import com.inonvation.campbox.data.DeviceItem
 import com.inonvation.campbox.data.OrderHistoryItem
 import com.inonvation.campbox.data.QuickLink
 import com.inonvation.campbox.data.UnlockResult
+import com.inonvation.campbox.data.WaterHistoryTotals
 import com.inonvation.campbox.data.UpdateInfo
 import com.inonvation.campbox.ui.theme.ColorTheme
 import com.inonvation.campbox.ui.theme.ThemeMode
@@ -30,7 +31,9 @@ sealed class UnlockFlowState {
     ) : UnlockFlowState()
 }
 
-internal fun AppUiState.withRepairedWaterOrders(history: List<OrderHistoryItem>): AppUiState {
+internal fun AppUiState.withRepairedWaterOrders(
+    history: List<OrderHistoryItem>, totals: WaterHistoryTotals = WaterHistoryTotals.from(history),
+): AppUiState {
     val currentOrderNo = when (val flow = unlockFlowState) {
         is UnlockFlowState.Pending -> flow.result.orderNo
         is UnlockFlowState.Success -> flow.result.orderNo
@@ -41,7 +44,8 @@ internal fun AppUiState.withRepairedWaterOrders(history: List<OrderHistoryItem>)
     }
     return copy(
         orderHistory = history,
-        totalWaterCount = history.count { it.usageConfirmed },
+        totalWaterCount = totals.confirmedCount,
+        totalWaterSpending = totals.spendingText,
         unlockFlowState = repaired?.let { UnlockFlowState.Success(it.toUnlockResult()) } ?: unlockFlowState,
     )
 }
@@ -81,6 +85,7 @@ data class AppUiState(
     val signInDoneToday: Boolean = false,
     val signingIn: Boolean = false,
     val totalWaterCount: Int = 0,
+    val totalWaterSpending: String = "0.00",
     val orderHistory: List<OrderHistoryItem> = emptyList(),
 
     // ── 校园网 ──

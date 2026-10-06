@@ -21,3 +21,13 @@ fun calculateActualCost(result: UnlockResult): String {
         .coerceAtLeast(BigDecimal.ZERO)
     return cost.setScale(2, RoundingMode.HALF_UP).toPlainString()
 }
+
+/** 用户实际花费：小票支付也属于支出，不能与积分、优惠一同扣减。 */
+fun calculateWaterSpending(result: UnlockResult): String {
+    val origin = result.originPrice.toBigDecimalOrNull() ?: return result.originPrice
+    val integral = result.integralCost.toBigDecimalOrNull() ?: BigDecimal.ZERO
+    val other = result.otherPromotions.mapNotNull { it.discountAmount?.toBigDecimalOrNull() }
+        .fold(BigDecimal.ZERO, BigDecimal::add)
+    return origin.subtract(integral).subtract(other).coerceAtLeast(BigDecimal.ZERO)
+        .setScale(2, RoundingMode.HALF_UP).toPlainString()
+}

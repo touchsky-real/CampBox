@@ -1,4 +1,4 @@
-package com.inonvation.campbox.ui.screen
+﻿package com.inonvation.campbox.ui.screen
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -53,7 +53,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.inonvation.campbox.data.UnlockResult
-import com.inonvation.campbox.data.calculateActualCost
+import com.inonvation.campbox.data.calculateWaterSpending
 import com.inonvation.campbox.ui.UnlockFlowState
 import com.inonvation.campbox.ui.theme.AppColors
 import com.inonvation.campbox.ui.theme.CardShapes
@@ -146,7 +146,7 @@ internal fun InlineSuccess(result: UnlockResult, onShowDetail: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         InlineSuccessPriceRow("原价", result.originPrice)
         InlineSuccessPriceRow("抵扣", result.integralCost)
-        InlineSuccessPriceRow("花费", calculateActualCost(result))
+        InlineSuccessPriceRow("花费", calculateWaterSpending(result))
         result.pointsUnusedReason?.let { reason ->
             Spacer(Modifier.height(4.dp))
             Text(

@@ -1,4 +1,4 @@
-package com.inonvation.campbox.data
+﻿package com.inonvation.campbox.data
 
 import retrofit2.http.Field
 import retrofit2.http.FieldMap

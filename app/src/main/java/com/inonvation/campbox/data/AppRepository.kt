@@ -1,4 +1,4 @@
-package com.inonvation.campbox.data
+﻿package com.inonvation.campbox.data
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -41,6 +41,7 @@ class AppRepository(
     fun clearOrderHistory() = orderHistoryStore.clearAll()
 
     fun orderHistory(): List<OrderHistoryItem> = orderHistoryStore.list()
+    fun waterHistoryTotals(): WaterHistoryTotals = orderHistoryStore.totals()
 
     suspend fun sendCode(phone: String) {
         api.sendCode(phone = phone).throwIfFailed()

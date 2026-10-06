@@ -1,4 +1,4 @@
-package com.inonvation.campbox.ui.screen
+﻿package com.inonvation.campbox.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -219,7 +219,7 @@ private fun OrderCard(
                 DetailRow("订单号", item.orderNo)
                 item.note?.let { DetailRow("说明", it) }
                 DetailRow("原价", item.originPrice)
-                DetailRow("小票", item.ticketCost)
+                DetailRow("小票支付", if (item.ticketCost == "-") "未显示抵扣" else "¥${item.ticketCost}")
                 DetailRow(
                     "积分",
                     when {

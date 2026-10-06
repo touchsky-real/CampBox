@@ -135,6 +135,7 @@ class AuthController(
                 devices = emptyList(),
                 orderHistory = emptyList(),
                 totalWaterCount = 0,
+                totalWaterSpending = "0.00",
                 unlockFlowState = UnlockFlowState.Idle,
                 unlockStatus = null,
                 unlockingDeviceId = null,

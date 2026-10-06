@@ -1,4 +1,4 @@
-package com.inonvation.campbox.data
+﻿package com.inonvation.campbox.data
 
 import com.squareup.moshi.Json
 

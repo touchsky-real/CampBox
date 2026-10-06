@@ -497,7 +497,8 @@ class AppViewModel(
                     unlockFlowState = if (result.usageConfirmed) UnlockFlowState.Success(result)
                         else UnlockFlowState.Pending(result),
                     unlockElapsedSeconds = 0, unlockFlowHidden = false, orderHistory = history,
-                    totalWaterCount = history.count { order -> order.usageConfirmed })
+                    totalWaterCount = repository.waterHistoryTotals().confirmedCount,
+                    totalWaterSpending = repository.waterHistoryTotals().spendingText)
             }
             refreshBalance(silent = true)
             if (!result.usageConfirmed || result.originPrice == "-") {
@@ -689,8 +690,8 @@ class AppViewModel(
 
     // ── 统计 ──
     fun refreshTodayWater() {
-        val count = repository.orderHistory().count { it.usageConfirmed }
-        _state.update { it.copy(totalWaterCount = count) }
+        val totals = repository.waterHistoryTotals()
+        _state.update { it.copy(totalWaterCount = totals.confirmedCount, totalWaterSpending = totals.spendingText) }
     }
 
     /** 启动时自动补查历史待确认订单：查到账单就回填真实金额，失败静默不影响启动 */
@@ -712,7 +713,8 @@ class AppViewModel(
                     val repaired = repository.repairPendingOrders(activeOrderNo) {
                         if (repository.localToken() == token) {
                             val history = repository.orderHistory()
-                            _state.update { state -> state.withRepairedWaterOrders(history) }
+                            val totals = repository.waterHistoryTotals()
+                            _state.update { state -> state.withRepairedWaterOrders(history, totals) }
                         }
                     }
                     if (repository.localToken() != token) return@launch
