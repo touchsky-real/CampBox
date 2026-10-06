@@ -18,17 +18,13 @@ internal suspend fun monitorWaterUsage(
 ): WaterUsageOutcome = withTimeoutOrNull(timeoutMillis) {
     var everWorked = false
     var failures = 0
-    var unknownStates = 0
     while (true) {
         val status = try {
             withTimeoutOrNull(5_000) { query() }
         } catch (_: IOException) { null }
         if (status == null) {
             failures++
-            if (failures >= 3) return@withTimeoutOrNull WaterUsageOutcome.Pending(
-                "网络暂时不可用，无法确认设备是否结束；若已接完水，请稍后在胖乖生活核对账单",
-            )
-            onStep("网络暂时中断，正在重新查询设备状态（$failures/3）")
+            onStep("状态查询暂未返回，正在重试（第 $failures 次）")
         } else {
             failures = 0
             val identifier = status.identify?.takeIf { it.isNotBlank() }
@@ -38,30 +34,25 @@ internal suspend fun monitorWaterUsage(
             val belongsToOrder = everWorked || identifier == orderNo
             val ended = status.status == 3 || status.status == 5
             when {
-                // 官方客户端以 status 3/5 判定使用结束（6 为设备异常），优先于 workStatus 猜测
+                // 官方客户端以 status 3/5 判定使用结束；6 时退出状态页，仍需独立核对账单。
                 ended && belongsToOrder ->
                     return@withTimeoutOrNull WaterUsageOutcome.Completed
                 status.status == 6 -> return@withTimeoutOrNull WaterUsageOutcome.Pending(
-                    "设备上报异常，请确认饮水机是否已停止出水；若已接完水，账单稍后会自动补查",
+                    "设备暂未提供本次使用状态，请确认已停止出水；账单将继续补查",
                 )
                 !ended && status.workStatus == 2 -> {
                     everWorked = true
-                    unknownStates = 0
                     onStep("设备工作中，正在等待完成")
                 }
-                status.workStatus != null && belongsToOrder ->
+                status.status == null && status.workStatus != null && belongsToOrder ->
                     return@withTimeoutOrNull WaterUsageOutcome.Completed
                 else -> {
-                    unknownStates++
-                    if (unknownStates >= 6) return@withTimeoutOrNull WaterUsageOutcome.Pending(
-                        "尚未收到本次订单的明确状态；若已接完水，请稍后在胖乖生活核对账单",
-                    )
                     onStep("开水指令已受理，等待设备更新状态")
                 }
             }
         }
-        delay(1_000)
+        delay(1_500)
     }
     @Suppress("UNREACHABLE_CODE")
     WaterUsageOutcome.Pending("设备状态待确认")
-} ?: WaterUsageOutcome.Pending("设备状态确认超时，请检查饮水机是否停止出水，并在胖乖生活核对订单")
+} ?: WaterUsageOutcome.Pending("暂未确认设备结束状态，正在补查本次账单；请确认饮水机已停止出水")

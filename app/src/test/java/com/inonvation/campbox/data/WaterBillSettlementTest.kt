@@ -9,19 +9,20 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.fail
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WaterBillSettlementTest {
     private val ready = OrderDetailData(tradeOrderItem = listOf(TradeOrderItem("0.50")))
 
-    @Test fun `查询详情超时仍保留已生成的订单号`() = runTest {
+    @Test fun `单次查询详情超时仍保留已生成的订单号`() = runTest {
         val (id, detail) = settleWaterBill(
             createOrder = { "order-id" }, queryDetail = { delay(60_000); ready },
             onStep = {}, createAttempts = 1, detailAttempts = 1,
         )
         assertEquals("order-id", id)
         assertNull(detail)
-        assertEquals(20_000L, testScheduler.currentTime)
+        assertEquals(5_000L, testScheduler.currentTime)
     }
 
     @Test fun `登录失效保留待确认结果且不继续重试`() = runTest {
@@ -105,5 +106,61 @@ class WaterBillSettlementTest {
                 onStep = {}, createAttempts = 4, detailAttempts = 2,
             )
         }
+    }
+
+    @Test fun `已自动结算的订单直接按订单号查回无需再建单`() = runTest {
+        val existing = ready.copy(id = "official-id", orderNo = "mine")
+        val bill = settleWaterBill(
+            createOrder = { fail("已有账单不应再建单") },
+            queryDetail = { fail("已有账单不应再查询") },
+            queryExisting = { existing },
+            onStep = {}, createAttempts = 4, detailAttempts = 6,
+        )
+        assertEquals("official-id", bill.first)
+        assertEquals(existing, bill.second)
+    }
+
+    @Test fun `建单请求超时后仍可读取新生成的官方账单`() = runTest {
+        var queries = 0
+        val existing = ready.copy(id = "official-id")
+        val bill = settleWaterBill(
+            createOrder = { delay(30_000); "unreachable" }, queryDetail = { ready },
+            queryExisting = { if (++queries == 1) null else existing },
+            onStep = {}, createAttempts = 4, detailAttempts = 6,
+        )
+        assertEquals(existing, bill.second)
+        assertEquals("official-id", bill.first)
+        assertEquals(5_000L, testScheduler.currentTime)
+    }
+
+    @Test fun `连续慢响应不能吞掉整个补查窗口`() = runTest {
+        var calls = 0
+        val bill = settleWaterBill(
+            createOrder = { "order-id" },
+            queryDetail = { if (++calls < 3) delay(30_000); ready },
+            onStep = {}, createAttempts = 1, detailAttempts = 6,
+        )
+        assertEquals(ready, bill.second)
+        assertEquals(3, calls)
+    }
+
+    @Test fun `历史补查发现登录失效应立即停止整批请求`() = runTest {
+        assertFailsWith<TokenExpiredException> {
+            settleWaterBill(
+                createOrder = { fail("不应建单") }, queryDetail = { ready },
+                queryExisting = { throw TokenExpiredException() }, stopOnTokenExpired = true,
+                onStep = {}, createAttempts = 1, detailAttempts = 2,
+            )
+        }
+    }
+
+    @Test fun `已保存订单号的待确认记录不重复建单`() = runTest {
+        val bill = settleWaterBill(
+            createOrder = { fail("不应重复建单") },
+            queryDetail = { assertEquals("saved-id", it); ready }, knownOrderId = "saved-id",
+            onStep = {}, createAttempts = 1, detailAttempts = 2,
+        )
+        assertEquals("saved-id", bill.first)
+        assertEquals(ready, bill.second)
     }
 }

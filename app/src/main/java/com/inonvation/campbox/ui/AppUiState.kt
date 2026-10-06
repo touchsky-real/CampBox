@@ -1,4 +1,4 @@
-﻿package com.inonvation.campbox.ui
+package com.inonvation.campbox.ui
 
 import com.inonvation.campbox.data.BalanceData
 import com.inonvation.campbox.data.DeviceItem
@@ -28,6 +28,22 @@ sealed class UnlockFlowState {
         val rawError: String,
         val suggestions: List<String> = emptyList(),
     ) : UnlockFlowState()
+}
+
+internal fun AppUiState.withRepairedWaterOrders(history: List<OrderHistoryItem>): AppUiState {
+    val currentOrderNo = when (val flow = unlockFlowState) {
+        is UnlockFlowState.Pending -> flow.result.orderNo
+        is UnlockFlowState.Success -> flow.result.orderNo
+        else -> null
+    }
+    val repaired = history.firstOrNull {
+        it.orderNo == currentOrderNo && it.usageConfirmed && it.originPrice != "-"
+    }
+    return copy(
+        orderHistory = history,
+        totalWaterCount = history.count { it.usageConfirmed },
+        unlockFlowState = repaired?.let { UnlockFlowState.Success(it.toUnlockResult()) } ?: unlockFlowState,
+    )
 }
 
 data class AppUiState(

@@ -118,4 +118,11 @@ interface DeviceApi {
         @Field("orderId") orderId: String,
         @Field("token") token: String,
     ): ApiEnvelope<OrderDetailData>
+
+    @FormUrlEncoded
+    @POST("order/detail")
+    suspend fun orderDetailByOrderNo(
+        @Field("orderNo") orderNo: String,
+        @Field("token") token: String,
+    ): ApiEnvelope<OrderDetailData>
 }

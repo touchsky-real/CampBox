@@ -226,7 +226,7 @@ class AppRepository(
         // 水已出完，账单环节失败不应判为开水失败——降级为待确认订单，避免吓人的「未知错误」
         val (orderId, detail) = settleOrderBill(
             orderNo = finalOrderNo, token = token, onStep = onStep,
-            createAttempts = 1, detailAttempts = 1, label = "",
+            createAttempts = 4, detailAttempts = 6, label = "",
         )
         if (detail == null) {
             val result = UnlockResult(
@@ -295,9 +295,15 @@ class AppRepository(
         createAttempts: Int,
         detailAttempts: Int,
         label: String,
+        knownOrderId: String = "",
+        timeoutMillis: Long = 45_000,
+        stopOnTokenExpired: Boolean = false,
     ): Pair<String, OrderDetailData?> = settleWaterBill(
         createOrder = { api.createAfterPay(orderNo = orderNo, token = token).requireData().orderId },
-        queryDetail = { api.orderDetail(orderId = it, token = token).requireData() },
+        queryDetail = { api.orderDetail(orderId = it, token = token).requireData().forOrder(orderNo) },
+        queryExisting = { api.orderDetailByOrderNo(orderNo, token).requireData().forOrder(orderNo) },
+        knownOrderId = knownOrderId, timeoutMillis = timeoutMillis,
+        stopOnTokenExpired = stopOnTokenExpired,
         onStep = onStep, createAttempts = createAttempts, detailAttempts = detailAttempts, label = label,
     )
 
@@ -381,13 +387,17 @@ class AppRepository(
      * 只追最近 7 天内的，单次最多 10 笔；登录失效即停，单笔失败不影响其余。
      * 返回修复笔数。
      */
-    suspend fun repairPendingOrders(): Int {
+    suspend fun repairPendingOrders(
+        preferredOrderNo: String? = null,
+        onRepaired: (OrderHistoryItem) -> Unit = {},
+    ): Int {
         val now = System.currentTimeMillis()
         val targets = orderHistory()
             .filter {
                 (!it.usageConfirmed || it.originPrice == "-") &&
                     now - it.completedAt <= REPAIR_MAX_AGE_DAYS * 86_400_000L
             }
+            .sortedByDescending { it.orderNo == preferredOrderNo }
             .take(REPAIR_MAX_ORDERS)
         if (targets.isEmpty()) return 0
         val token = requireToken()
@@ -402,6 +412,7 @@ class AppRepository(
                 if (updated != null && orderHistory().any { it == item }) {
                     orderHistoryStore.add(updated)
                     repaired++
+                    onRepaired(updated)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -415,19 +426,12 @@ class AppRepository(
     }
 
     private suspend fun repairOne(item: OrderHistoryItem, token: String): OrderHistoryItem? {
-        val orderId = item.orderId.takeIf { it.isNotBlank() }
-            ?: api.createAfterPay(orderNo = item.orderNo, token = token).requireData().orderId
-                ?.takeIf { it.isNotBlank() }
-            ?: return null
-        val detail = try {
-            api.orderDetail(orderId = orderId, token = token).requireData()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: TokenExpiredException) {
-            throw e
-        } catch (_: Exception) {
-            return null
-        }
+        val (orderId, detail) = settleOrderBill(
+            orderNo = item.orderNo, token = token, onStep = {},
+            knownOrderId = item.orderId, createAttempts = 1, detailAttempts = 2,
+            label = "", timeoutMillis = 20_000, stopOnTokenExpired = true,
+        )
+        if (detail == null) return null
         if (!detail.hasBillAmount()) return null // 账单还没出，下次启动再试
         val originPrice = detail.tradeOrderItem.first().originPrice!!
         val usedPoints = detail.promotionList.firstOrNull { it.promotionType == 8 }
@@ -445,6 +449,11 @@ class AppRepository(
             pointsUsedPoints = null,
             pointsUnusedReason = if (usedPoints) null else item.pointsUnusedReason,
         )
+    }
+
+    private fun OrderDetailData.forOrder(expectedOrderNo: String): OrderDetailData {
+        check(orderNo.isNullOrBlank() || orderNo == expectedOrderNo) { "返回账单与本次订单不一致" }
+        return this
     }
 
     // wrap 抛出的 IllegalStateException 丢失步骤上下文，未包装异常时用 currentStep 兜底
@@ -503,7 +512,7 @@ class AppRepository(
     internal companion object {
         const val WATER_CATEGORY_CODE = "04"
         private const val PENDING_CREATE_ATTEMPTS = 4
-        private const val PENDING_DETAIL_ATTEMPTS = 2
+        private const val PENDING_DETAIL_ATTEMPTS = 6
         private const val REPAIR_MAX_AGE_DAYS = 7
         private const val REPAIR_MAX_ORDERS = 10
         private const val REPAIR_INTERVAL_MS = 500L

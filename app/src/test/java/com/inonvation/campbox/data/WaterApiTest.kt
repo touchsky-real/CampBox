@@ -47,6 +47,16 @@ class WaterApiTest {
         }
     }
 
+    @Test fun `没有订单ID也可按订单号查询已结算账单`() = runTest {
+        responseJson = """{"code":0,"data":{"id":"official-id","orderNo":"mine","tradeOrderItem":[{"originPrice":"0.12"}],"promotionList":[{"promotionType":8,"discountAmount":"0.12"}]}}"""
+        val detail = api.orderDetailByOrderNo("mine", "test-token").requireData()
+        assertEquals("/order/detail", request.url.encodedPath)
+        assertEquals(mapOf("orderNo" to "mine", "token" to "test-token"), form())
+        assertEquals("official-id", detail.id)
+        assertEquals("0.12", detail.promotionList.single().discountAmount)
+        assertTrue(detail.hasBillAmount())
+    }
+
     @Test fun `开启积分时实际请求包含官方正八抵扣项且未被编码破坏`() = runTest {
         responseJson = """{"code":0,"data":{"orderNo":"mine","msgId":"message"}}"""
         api.unlockWater(emptyMap(), "sku", AppRepository.promotions(true), "test-token")

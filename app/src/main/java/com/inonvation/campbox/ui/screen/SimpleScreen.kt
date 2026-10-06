@@ -233,7 +233,7 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                             vm = vm,
                             selectedDevice = selectedDevice,
                             onSelectDevice = { selectedDevice = it },
-                            onShowDetail = { showWaterDetail = true },
+                            onShowDetail = { showWaterDetail = true; vm.refreshWaterOrders() },
                             onPickDevice = { showDeviceSheet = true },
                             onShowHelp = { showWaterHelp = true },
                             haptic = haptic,
@@ -406,7 +406,7 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
     }
 }
 
-/** 顶栏下的一条账户状态行：小票余额 + 累计开水 + 签到按钮 */
+/** 顶栏下的一条账户状态行：小票 + 累计开水 + 签到按钮 */
 @Composable
 private fun AccountStripRow(state: AppUiState, vm: AppViewModel, haptic: HapticFeedback) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -617,8 +617,7 @@ private fun WaterCard(
                                 val result = (contentFlow as UnlockFlowState.Pending).result
                                 Column {
                                     Text("状态待确认", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-                                    Text(result.note.orEmpty(), style = MaterialTheme.typography.bodySmall)
-                                    Text("请勿重复开水；订单已保留，可在胖乖生活核对。", style = MaterialTheme.typography.bodySmall)
+                                    Text("账单仍在补查，请勿重复开水。", style = MaterialTheme.typography.bodySmall)
                                     TextButton(onClick = onShowDetail) { Text("查看订单") }
                                 }
                             }

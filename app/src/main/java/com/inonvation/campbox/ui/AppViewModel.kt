@@ -500,6 +500,9 @@ class AppViewModel(
                     totalWaterCount = history.count { order -> order.usageConfirmed })
             }
             refreshBalance(silent = true)
+            if (!result.usageConfirmed || result.originPrice == "-") {
+                repairPendingOrders(retryRecent = true)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: TokenExpiredException) {
@@ -691,22 +694,31 @@ class AppViewModel(
     }
 
     /** 启动时自动补查历史待确认订单：查到账单就回填真实金额，失败静默不影响启动 */
-    private fun repairPendingOrders() {
+    private fun repairPendingOrders(retryRecent: Boolean = false) {
+        if (pendingOrdersRepairJob?.isActive == true && !retryRecent) return
         pendingOrdersRepairJob?.cancel()
         pendingOrdersRepairJob = viewModelScope.launch {
             try {
                 val token = repository.localToken()
-                val repaired = repository.repairPendingOrders()
-                if (repaired > 0 && token != null && repository.localToken() == token) {
-                    val history = repository.orderHistory()
-                    _state.update {
-                        it.copy(
-                            orderHistory = history,
-                            totalWaterCount = history.count { order -> order.usageConfirmed },
-                        )
+                if (token == null) return@launch
+                repeat(if (retryRecent) 3 else 1) { attempt ->
+                    if (retryRecent) delay(5_000L * (attempt + 1))
+                    if (repository.localToken() != token) return@launch
+                    val activeOrderNo = when (val flow = state.value.unlockFlowState) {
+                        is UnlockFlowState.Pending -> flow.result.orderNo
+                        is UnlockFlowState.Success -> flow.result.orderNo
+                        else -> null
                     }
-                    refreshBalance(silent = true)
-                    showToast("已自动补回 $repaired 笔待确认订单")
+                    val repaired = repository.repairPendingOrders(activeOrderNo) {
+                        if (repository.localToken() == token) {
+                            val history = repository.orderHistory()
+                            _state.update { state -> state.withRepairedWaterOrders(history) }
+                        }
+                    }
+                    if (repository.localToken() != token) return@launch
+                    if (repaired > 0) refreshBalance(silent = true)
+                    val history = repository.orderHistory()
+                    if (history.none { !it.usageConfirmed || it.originPrice == "-" }) return@launch
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -718,6 +730,18 @@ class AppViewModel(
 
     fun showOrderHistory() {
         _state.update { it.copy(showOrderHistory = true, orderHistory = repository.orderHistory()) }
+        refreshWaterOrders()
+    }
+
+    /** 查看订单或返回 App 时读取真实账单；不会重发开水指令。 */
+    fun refreshWaterOrders() {
+        if (state.value.hasToken && !state.value.unlocking) repairPendingOrders()
+    }
+
+    fun onResume() {
+        if (!state.value.hasToken) return
+        refreshBalance(silent = true)
+        refreshWaterOrders()
     }
     fun dismissOrderHistory() { _state.update { it.copy(showOrderHistory = false) } }
 

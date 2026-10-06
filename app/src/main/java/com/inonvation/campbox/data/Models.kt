@@ -62,7 +62,7 @@ data class UnlockData(
 data class SyncData(
     val workStatus: Int? = null,
     val identify: String? = null,
-    // 官方客户端以 status 3/5 判定使用结束、6 为设备异常；amount 为本单金额（元）
+    // 官方客户端以 status 3/5 判定使用结束，6 时退出状态页；amount 为本单金额（元）。
     val status: Int? = null,
     val amount: String? = null,
 )
@@ -89,6 +89,8 @@ data class IntegralLimitRule(
 data class OrderDetailData(
     val tradeOrderItem: List<TradeOrderItem> = emptyList(),
     val promotionList: List<PromotionItem> = emptyList(),
+    val id: String? = null,
+    val orderNo: String? = null,
 )
 
 data class TradeOrderItem(

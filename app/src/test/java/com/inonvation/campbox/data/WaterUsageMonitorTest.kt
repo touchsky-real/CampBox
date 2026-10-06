@@ -2,6 +2,7 @@ package com.inonvation.campbox.data
 
 import java.net.UnknownHostException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -9,6 +10,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class WaterUsageMonitorTest {
     @Test fun `轮询断网后恢复 不应报告接水失败`() = runTest {
         var calls = 0
@@ -28,13 +30,20 @@ class WaterUsageMonitorTest {
             monitorWaterUsage("mine", query = { SyncData(0, "mine") }, onStep = {}))
     }
 
-    @Test fun `持续 DNS 错误只查三次并返回待确认`() = runTest {
+    @Test fun `短暂断网超过三次仍可恢复到本单结束`() = runTest {
         var calls = 0
-        assertIs<WaterUsageOutcome.Pending>(monitorWaterUsage("mine", query = {
-            calls++
-            throw UnknownHostException("Unable to resolve host")
+        assertEquals(WaterUsageOutcome.Completed, monitorWaterUsage("mine", query = {
+            if (++calls <= 4) throw UnknownHostException("Unable to resolve host")
+            SyncData(0, "mine", status = 3, amount = "0.12")
         }, onStep = {}))
-        assertEquals(3, calls)
+        assertEquals(5, calls)
+    }
+
+    @Test fun `持续断网按总时限退出并保留待确认`() = runTest {
+        assertIs<WaterUsageOutcome.Pending>(monitorWaterUsage("mine", query = {
+            throw UnknownHostException()
+        }, onStep = {}, timeoutMillis = 10_000))
+        assertEquals(10_000L, testScheduler.currentTime)
     }
 
     @Test fun `其他订单不可用作本次订单的结算依据`() = runTest {
@@ -63,7 +72,7 @@ class WaterUsageMonitorTest {
             calls++
             delay(60_000)
             SyncData(0, "mine")
-        }, onStep = {}))
+        }, onStep = {}, timeoutMillis = 16_000))
         assertEquals(3, calls)
     }
 
@@ -95,5 +104,14 @@ class WaterUsageMonitorTest {
     @Test fun `其他订单的官方结束状态也不能结算本单`() = runTest {
         assertIs<WaterUsageOutcome.Pending>(monitorWaterUsage("mine",
             query = { SyncData(workStatus = 0, identify = "other", status = 3) }, onStep = {}))
+    }
+
+    @Test fun `有官方使用状态时不能凭空闲工作状态提前结算`() = runTest {
+        var calls = 0
+        assertEquals(WaterUsageOutcome.Completed, monitorWaterUsage("mine", query = {
+            if (++calls < 9) SyncData(workStatus = 0, identify = "mine", status = 2)
+            else SyncData(workStatus = 0, identify = "mine", status = 5)
+        }, onStep = {}))
+        assertEquals(9, calls)
     }
 }

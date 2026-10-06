@@ -1,4 +1,4 @@
-﻿package com.inonvation.campbox
+package com.inonvation.campbox
 
 import android.Manifest
 
@@ -36,6 +36,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.inonvation.campbox.data.AppRepository
 import com.inonvation.campbox.data.DeviceIdProvider
 import com.inonvation.campbox.data.OrderHistoryStore
@@ -108,6 +110,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun AppRoot(vm: AppViewModel) {
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.onResume() }
     val state by vm.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
