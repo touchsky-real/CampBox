@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -209,13 +210,17 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                     Text("主题配色", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text("应用的主色调", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Spacings.sm)) {
                         listOf(
                             ColorTheme.GREEN to "绿色",
                             ColorTheme.PINK to "粉色",
                             ColorTheme.YELLOW to "黄色",
                             ColorTheme.BLUE to "蓝色",
                             ColorTheme.BROWN to "棕色",
+                            ColorTheme.PURPLE to "紫色",
+                            ColorTheme.ORANGE to "橙色",
+                            ColorTheme.TEAL to "青色",
+                            ColorTheme.RED to "红色",
                         ).forEach { (theme, label) ->
                             FilterChip(
                                 selected = state.colorTheme == theme,

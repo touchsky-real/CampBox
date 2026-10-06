@@ -183,6 +183,27 @@ private val BrownDark = darkColorScheme(
     outline = Color(0xFF3C3830),
 )
 
+// 新配色保留中性卡片与背景，仅强调按钮、选中项及对应容器。
+private fun accentScheme(primary: Color, container: Color, dark: Boolean) =
+    (if (dark) GreenDark else GreenLight).let { base ->
+        base.copy(
+            primary = primary, primaryContainer = container, onPrimaryContainer = base.onSurface,
+            secondary = primary, secondaryContainer = container, onSecondaryContainer = base.onSurface,
+            tertiary = primary, onTertiary = base.onPrimary,
+            tertiaryContainer = container, onTertiaryContainer = base.onSurface,
+            surfaceTint = primary,
+        )
+    }
+
+private val PurpleLight = accentScheme(Color(0xFF6750A4), Color(0xFFEADDFF), false)
+private val PurpleDark = accentScheme(Color(0xFFD0BCFF), Color(0xFF4F378B), true)
+private val OrangeLight = accentScheme(Color(0xFF8B5000), Color(0xFFFFDDB4), false)
+private val OrangeDark = accentScheme(Color(0xFFFFB870), Color(0xFF693C00), true)
+private val TealLight = accentScheme(Color(0xFF006874), Color(0xFF97F0FF), false)
+private val TealDark = accentScheme(Color(0xFF4FD8EB), Color(0xFF004F58), true)
+private val RedLight = accentScheme(Color(0xFF9C4146), Color(0xFFFFDADB), false)
+private val RedDark = accentScheme(Color(0xFFFFB3B6), Color(0xFF7D292F), true)
+
 @Composable
 fun colorSchemeForTheme(colorTheme: ColorTheme, darkTheme: Boolean) = when (colorTheme) {
     ColorTheme.GREEN -> if (darkTheme) GreenDark else GreenLight
@@ -190,6 +211,10 @@ fun colorSchemeForTheme(colorTheme: ColorTheme, darkTheme: Boolean) = when (colo
     ColorTheme.YELLOW -> if (darkTheme) YellowDark else YellowLight
     ColorTheme.BLUE -> if (darkTheme) BlueDark else BlueLight
     ColorTheme.BROWN -> if (darkTheme) BrownDark else BrownLight
+    ColorTheme.PURPLE -> if (darkTheme) PurpleDark else PurpleLight
+    ColorTheme.ORANGE -> if (darkTheme) OrangeDark else OrangeLight
+    ColorTheme.TEAL -> if (darkTheme) TealDark else TealLight
+    ColorTheme.RED -> if (darkTheme) RedDark else RedLight
 }
 
 @Composable

@@ -73,6 +73,10 @@ object HeaderGradients {
                 Color(0xFF6E8B98), Color(0xFF55707E),
                 Color(0xFF3A505A), Color(0xFF283840),
             )
+            ColorTheme.PURPLE -> listOf(Color(0xFF6750A4), Color(0xFF4F378B), Color(0xFF4F378B), Color(0xFF322052))
+            ColorTheme.ORANGE -> listOf(Color(0xFF8B5000), Color(0xFF693C00), Color(0xFF693C00), Color(0xFF442700))
+            ColorTheme.TEAL -> listOf(Color(0xFF006874), Color(0xFF004F58), Color(0xFF004F58), Color(0xFF00343A))
+            ColorTheme.RED -> listOf(Color(0xFF9C4146), Color(0xFF7D292F), Color(0xFF7D292F), Color(0xFF511A20))
             ColorTheme.BROWN -> listOf(
                 Color(0xFF8B7D6B), Color(0xFF726454),
                 Color(0xFF4A3D30), Color(0xFF30281E),

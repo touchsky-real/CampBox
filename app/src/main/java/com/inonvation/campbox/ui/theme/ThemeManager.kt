@@ -5,7 +5,7 @@ import android.content.Context
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 enum class ColorTheme {
-    GREEN, PINK, YELLOW, BLUE, BROWN
+    GREEN, PINK, YELLOW, BLUE, BROWN, PURPLE, ORANGE, TEAL, RED
 }
 
 class ThemePreferences(context: Context) {
