@@ -72,6 +72,19 @@ class QzxyRepository(
 
     suspend fun login(telephone: String, password: String): QzxySession {
         val resp = call { api.login(telephone = telephone, password = QzxyPassword.encrypt(password)) }
+        return saveLoginSession(telephone, resp)
+    }
+
+    suspend fun sendLoginSms(telephone: String) {
+        call { api.sendLoginSms(telephone, QzxySms.secret(telephone)) }
+    }
+
+    suspend fun loginWithSms(telephone: String, smsCode: String): QzxySession {
+        require(Regex("^[0-9]{6}$").matches(smsCode)) { "请输入 6 位短信验证码" }
+        return saveLoginSession(telephone, call { api.loginWithSms(telephone, smsCode) })
+    }
+
+    private fun saveLoginSession(telephone: String, resp: QzxyEnvelope<QzxyLoginData>): QzxySession {
         val data = resp.data ?: error("登录响应缺少数据")
         val loginCode = data.loginCode?.takeIf { it.isNotBlank() } ?: error("登录响应缺少登录凭证")
         val account = data.userAccount

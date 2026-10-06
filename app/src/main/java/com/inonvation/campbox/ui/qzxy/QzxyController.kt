@@ -54,6 +54,8 @@ class QzxyController(
     private var candidateDeadline: Long = 0
     private var accountGeneration: Long = 0
     private var pendingAccountPage: QzxyAccountPage? = null
+    private var smsTimerJob: Job? = null
+    private var smsDeadline: Long = 0
 
     // ── 会话恢复 ──
 
@@ -112,23 +114,72 @@ class QzxyController(
 
     // ── 登录 ──
 
-    fun showLoginSheet() = updateQzxy { it.copy(showLoginSheet = true, phone = "", password = "", loginError = null) }
+    fun showLoginSheet() = updateQzxy {
+        it.copy(showLoginSheet = true, password = "", smsCode = "", passwordVisible = false, loginError = null)
+    }
     fun dismissLoginSheet() {
+        if (state.value.qzxy.loggingIn || state.value.qzxy.sendingSms) return
         pendingAccountPage = null
-        updateQzxy { it.copy(showLoginSheet = false) }
+        updateQzxy { it.copy(showLoginSheet = false, password = "", smsCode = "", passwordVisible = false) }
     }
 
-    fun updatePhone(value: String) = updateQzxy { it.copy(phone = value.filter { c -> c.isDigit() }.take(11)) }
+    fun updatePhone(value: String) {
+        if (state.value.qzxy.loggingIn || state.value.qzxy.sendingSms) return
+        val phone = value.filter { it in '0'..'9' }.take(11)
+        updateQzxy { it.copy(phone = phone, smsCode = if (phone == it.phone) it.smsCode else "", loginError = null) }
+    }
+
+    fun updateSmsCode(value: String) = updateQzxy {
+        if (it.loggingIn) it else it.copy(smsCode = value.filter { c -> c in '0'..'9' }.take(6), loginError = null)
+    }
+
+    fun setSmsLogin(enabled: Boolean) = updateQzxy {
+        if (it.loggingIn || it.sendingSms) it
+        else it.copy(smsLogin = enabled, smsCode = "", password = "", passwordVisible = false, loginError = null)
+    }
+
+    fun sendLoginSms() = scope.launch {
+        val q = state.value.qzxy
+        if (q.loggedIn || q.loggingIn || q.sendingSms || !q.smsLogin) return@launch
+        if (!PHONE_REGEX.matches(q.phone)) {
+            updateQzxy { it.copy(loginError = "请输入正确格式的手机号") }
+            return@launch
+        }
+        if (SystemClock.elapsedRealtime() < smsDeadline) return@launch
+        // 超时不代表短信未发出；倒计时从请求开始，切换方式或关闭弹层也不能绕过。
+        smsDeadline = SystemClock.elapsedRealtime() + 60_000L
+        updateQzxy { it.copy(sendingSms = true, smsSecondsLeft = 60, loginError = null) }
+        smsTimerJob?.cancel()
+        smsTimerJob = scope.launch {
+            while (isActive) {
+                val left = ((smsDeadline - SystemClock.elapsedRealtime() + 999) / 1000).coerceAtLeast(0).toInt()
+                updateQzxy { it.copy(smsSecondsLeft = left) }
+                if (left == 0) break
+                delay(1000)
+            }
+        }
+        try {
+            repository.sendLoginSms(q.phone)
+            showToast("验证码已发送")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            updateQzxy { it.copy(loginError = accountError(e, "验证码发送失败，请稍后重试")) }
+        } finally {
+            updateQzxy { it.copy(sendingSms = false) }
+        }
+    }
     fun updatePassword(value: String) = updateQzxy { it.copy(password = value) }
     fun togglePasswordVisibility() = updateQzxy { it.copy(passwordVisible = !it.passwordVisible) }
 
     fun login() = scope.launch {
         val q = state.value.qzxy
-        if (q.loggingIn) return@launch
+        if (q.loggingIn || q.sendingSms || q.loggedIn) return@launch
         val phone = q.phone.trim()
         val error = when {
             !PHONE_REGEX.matches(phone) -> "请输入正确格式的手机号"
-            q.password.isBlank() -> "请输入密码"
+            q.smsLogin && !Regex("^[0-9]{6}$").matches(q.smsCode) -> "请输入 6 位短信验证码"
+            !q.smsLogin && q.password.isBlank() -> "请输入密码"
             else -> null
         }
         if (error != null) {
@@ -136,7 +187,10 @@ class QzxyController(
             return@launch
         }
         updateQzxy { it.copy(loggingIn = true, loginError = null) }
-        runCatching { repository.login(phone, q.password) }
+        runCatching {
+            if (q.smsLogin) repository.loginWithSms(phone, q.smsCode)
+            else repository.login(phone, q.password)
+        }
             .onSuccess { session ->
                 stopEverything()
                 updateQzxy {
@@ -189,6 +243,8 @@ class QzxyController(
     }
 
     private fun stopEverything() {
+        smsTimerJob?.cancel()
+        smsDeadline = 0
         // 先作废请求代次，避免退出或切换账号后旧响应写回新会话。
         accountGeneration++
         walletJob?.cancel()

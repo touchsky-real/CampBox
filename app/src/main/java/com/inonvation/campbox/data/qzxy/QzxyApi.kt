@@ -14,6 +14,24 @@ import retrofit2.http.QueryMap
  * 认证方式：loginCode 等参数随 GET 的 Query 或 POST 的 Form 传递，见 QzxySession。
  */
 interface QzxyApi {
+    @GET("user/verification/code/get")
+    suspend fun sendLoginSms(
+        @Query("telephone") telephone: String,
+        @Query("secret") secret: String,
+        @Query("typeId") typeId: Int = 3,
+        @Query("platform") platform: Int = 1,
+    ): QzxyEnvelope<EmptyData>
+
+    @FormUrlEncoded
+    @POST("user/registerAndLogin")
+    suspend fun loginWithSms(
+        @Field("telephone") telephone: String,
+        @Field("smsCode") smsCode: String,
+        @Field("type") type: Int = 5,
+        @Field("phoneSystem") phoneSystem: String = QzxyApiConfig.PHONE_SYSTEM,
+        @Field("version") version: String = QzxyApiConfig.VERSION,
+    ): QzxyEnvelope<QzxyLoginData>
+
     /** 密码登录。密码需经 QzxyPassword 加密（MD5 取后 10 位大写） */
     @FormUrlEncoded
     @POST("user/login")
