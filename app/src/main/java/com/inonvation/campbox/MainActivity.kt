@@ -23,6 +23,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,6 +33,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.inonvation.campbox.data.AppRepository
 import com.inonvation.campbox.data.DeviceIdProvider
@@ -44,6 +47,7 @@ import com.inonvation.campbox.data.qzxy.QzxyAuthStore
 import com.inonvation.campbox.data.qzxy.QzxyRepository
 import com.inonvation.campbox.ui.AppViewModel
 import com.inonvation.campbox.ui.AppViewModelFactory
+import com.inonvation.campbox.ui.StrongHaptics
 import com.inonvation.campbox.ui.UiEvent
 import com.inonvation.campbox.ui.campus.CampusPortalActivity
 import com.inonvation.campbox.ui.screen.OrderHistoryBottomSheet
@@ -90,7 +94,12 @@ class MainActivity : ComponentActivity() {
                 },
                 colorTheme = appearance.second,
             ) {
-                AppRoot(vm)
+                // 全局换用强触感实现，绕开系统「触摸时振动」开关
+                val view = LocalView.current
+                val haptics = remember(view, vm) { StrongHaptics(view) { vm.state.value.hapticEnabled } }
+                CompositionLocalProvider(LocalHapticFeedback provides haptics) {
+                    AppRoot(vm)
+                }
             }
         }
     }
