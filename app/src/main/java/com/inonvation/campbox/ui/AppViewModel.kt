@@ -1,5 +1,8 @@
 package com.inonvation.campbox.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.ViewModel
@@ -49,6 +52,7 @@ import kotlinx.coroutines.withContext
 
 sealed class UiEvent {
     data object OpenCampusPortal : UiEvent()
+    data object RequestWaterLocation : UiEvent()
     data class Toast(val message: String) : UiEvent()
     data class Error(val message: String) : UiEvent()
 }
@@ -65,6 +69,7 @@ class AppViewModel(
     private val context: Context = application.applicationContext
     private val unlockMutex = kotlinx.coroutines.sync.Mutex()
     private var unlockJob: Job? = null
+    private var pendingWaterPermissionDevice: DeviceItem? = null
     private var devicesLoadAttempted = false
 
     // ── State ──
@@ -309,6 +314,7 @@ class AppViewModel(
     fun sendCode() = authController.sendCode()
     fun login() = authController.login()
     fun logout() {
+        pendingWaterPermissionDevice = null
         unlockJob?.cancel()
         authController.logout()
         _state.update { it.copy(unlocking = false, unlockElapsedSeconds = 0) }
@@ -431,11 +437,27 @@ class AppViewModel(
             }) }
     }
 
+    fun onWaterLocationPermissionResult(granted: Boolean) {
+        val device = pendingWaterPermissionDevice ?: return
+        pendingWaterPermissionDevice = null
+        if (granted) unlock(device)
+        else showError("开水需要定位权限，请在系统设置中允许后重试")
+    }
+
     fun unlock(device: DeviceItem) = viewModelScope.launch {
         if (state.value.waterScanLoading || state.value.unlocking || !unlockMutex.tryLock()) return@launch
         try {
             if (!state.value.hasToken) {
                 showError("请先登录")
+                return@launch
+            }
+            val locationGranted = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                .any { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
+            if (!locationGranted) {
+                if (pendingWaterPermissionDevice == null) {
+                    pendingWaterPermissionDevice = device
+                    _events.trySend(UiEvent.RequestWaterLocation)
+                }
                 return@launch
             }
             unlockJob = coroutineContext[Job]

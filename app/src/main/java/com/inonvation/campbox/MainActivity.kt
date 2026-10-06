@@ -1,6 +1,7 @@
 ﻿package com.inonvation.campbox
 
 import android.Manifest
+
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
@@ -56,24 +57,6 @@ import com.inonvation.campbox.ui.theme.ThemeMode
 import com.inonvation.campbox.ui.theme.ThemePreferences
 
 class MainActivity : ComponentActivity() {
-    private val locationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { }
-
-    override fun onStart() {
-        super.onStart()
-        val preferences = getPreferences(MODE_PRIVATE)
-        if (!preferences.getBoolean(KEY_LOCATION_PERMISSION_REQUESTED, false)) {
-            preferences.edit().putBoolean(KEY_LOCATION_PERMISSION_REQUESTED, true).apply()
-            locationPermissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                ),
-            )
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val repository = AppRepository(
@@ -113,13 +96,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private const val KEY_LOCATION_PERMISSION_REQUESTED = "location_permission_requested"
 
 @Composable
 private fun AppRoot(vm: AppViewModel) {
     val state by vm.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val waterLocationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        vm.onWaterLocationPermissionResult(grants.values.any { it })
+    }
     val campusPortalLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         vm.verifyCampusInternetAfterPortal()
     }
@@ -152,6 +137,9 @@ private fun AppRoot(vm: AppViewModel) {
     LaunchedEffect(Unit) {
         vm.events.collect { event ->
             when (event) {
+                is UiEvent.RequestWaterLocation -> waterLocationLauncher.launch(arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION,
+                ))
                 is UiEvent.OpenCampusPortal -> {
                     val current = vm.state.value
                     campusPortalLauncher.launch(CampusPortalActivity.intent(context,
