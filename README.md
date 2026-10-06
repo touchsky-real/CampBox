@@ -2,7 +2,7 @@
 
 面向太原理工大学校园生活的 Android 工具，集成喝水、洗澡、校园网认证和常用快捷方式。使用 Kotlin、Jetpack Compose 和 Material 3 开发。
 
-[下载最新版](https://github.com/touchsky-real/light-life/releases/latest) · [反馈问题](https://github.com/touchsky-real/light-life/issues)
+[下载最新版](https://github.com/touchsky-real/CampBox/releases/latest) · [反馈问题](https://github.com/touchsky-real/CampBox/issues)
 
 支持 Android 8.0 及以上系统，当前构建面向 `arm64-v8a` 设备。
 

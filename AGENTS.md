@@ -1,4 +1,4 @@
-# LightLife - Agent 指南
+# CampBox - Agent 指南
 
 ## 项目
 
@@ -43,15 +43,15 @@ adb connect <IP>:5555          # 连接无线调试
 
 ## 版本与发布
 
-- `app/build.gradle.kts` 中 `defaultConfig.versionName`（当前 `3.0.0`），`versionCode` 从 `buildVersionCode` 属性读取
+- `app/build.gradle.kts` 中 `defaultConfig.versionName` / `versionCode` 默认值随每次发布更新；云端构建从 tag 名推导（v3.1.4 → versionCode 30104）并覆盖默认值
 - 发布流程：更新 versionName → commit → `git push origin main` → `git tag vx.y.z` → `git push --tags`
-- Release 工作流（`.github/workflows/release.yml`）：推送 `v*` tag 自动构建，从 `RELEASE.md` 或 git log 生成 Release Notes
+- Release 工作流（`.github/workflows/release-apk.yml`）：推送 `v*` tag 自动构建，从 `RELEASE.md` 或 git log 生成 Release Notes
 - CI（`.github/workflows/ci.yml`）：PR 到 main 时运行 `lintDebug` → `testDebugUnitTest` → `assembleDebug`
 
 ## 源码架构
 
-**包名**：`com.inonvation.lightlife`
-**源码路径**：`app/src/main/java/com/inonvation/lightlife/`（不是 `com/example/devicecontrol/`）
+**包名**：`com.inonvation.campbox`
+**源码路径**：`app/src/main/java/com/inonvation/campbox/`
 
 | 路径 | 职责 |
 |------|------|
@@ -69,6 +69,7 @@ adb connect <IP>:5555          # 连接无线调试
 | `ui/screen/Components.kt` | 跨页面共享组件（含分区小标题 `SectionLabel`） |
 | `ui/theme/AppStyles.kt` | UI 间距/颜色常量（含 `CardShapes.cardCorner`） |
 | `data/SignInRunner.kt` | 每日签到执行逻辑 |
+| `data/CampusNet*.kt` + `ui/campus/` | 校园网 Dr.COM Portal 认证：域名 `drcom.tyut.edu.cn` 与网关 IP 写死在代码里，仅太原理工可用，换校需改这两处 |
 | `data/` | API 接口、Repository、Store、Models |
 | `data/qzxy/` | 趣智校园模块：ApiConfig、Models（含独立响应包）、AuthStore、QzxyApi、QzxyRepository、BLE 扫描器、蓝牙直控（BtProtocol 帧协议 / BtClient GATT 通道） |
 
@@ -112,7 +113,7 @@ gradlew :app:testDebugUnitTest    # 单元测试
 gradlew :app:lintDebug            # Lint 检查
 ```
 
-测试文件在 `app/src/test/java/com/inonvation/lightlife/`。
+测试文件在 `app/src/test/java/com/inonvation/campbox/`。
 
 ## 注意事项
 
