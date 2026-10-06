@@ -1,4 +1,4 @@
-﻿package com.inonvation.campbox.ui.screen
+package com.inonvation.campbox.ui.screen
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -145,7 +145,7 @@ internal fun InlineSuccess(result: UnlockResult, onShowDetail: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         InlineSuccessPriceRow("原价", result.originPrice)
-        InlineSuccessPriceRow("抵扣", result.integralCost, points = result.pointsUsedPoints)
+        InlineSuccessPriceRow("抵扣", result.integralCost)
         InlineSuccessPriceRow("花费", calculateActualCost(result))
         result.pointsUnusedReason?.let { reason ->
             Spacer(Modifier.height(4.dp))
@@ -176,7 +176,7 @@ internal fun InlineSuccess(result: UnlockResult, onShowDetail: () -> Unit) {
 }
 
 @Composable
-private fun InlineSuccessPriceRow(label: String, value: String, points: String? = null) {
+private fun InlineSuccessPriceRow(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -190,7 +190,6 @@ private fun InlineSuccessPriceRow(label: String, value: String, points: String? 
         Text(
             text = when {
                 value == "-" -> "-"
-                points != null -> "¥$value（${points} 积分）"
                 else -> "¥$value"
             },
             style = MaterialTheme.typography.bodySmall,

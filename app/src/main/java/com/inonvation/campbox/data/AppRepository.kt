@@ -1,7 +1,5 @@
-﻿package com.inonvation.campbox.data
+package com.inonvation.campbox.data
 
-import java.math.BigDecimal
-import java.math.RoundingMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import okhttp3.logging.HttpLoggingInterceptor
@@ -138,6 +136,22 @@ class AppRepository(
             if (pointsEnabled) {
                 onStep("正在检查积分")
                 currentStep = "积分风控检查"
+                val rule = try {
+                    api.integralLimitRule(token).requireData()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: TokenExpiredException) {
+                    throw e
+                } catch (_: Exception) {
+                    null // 规则查询失败不能擅自取消用户选择的积分抵扣。
+                }
+                rule?.unusedReason()?.let { reason ->
+                    pointsEnabled = false
+                    pointsUnusedReason = reason
+                    onStep("$reason，本次不使用积分")
+                }
+            }
+            if (pointsEnabled) {
                 try {
                     val resp = api.useIntergral(token)
                     resp.throwIfFailed()
@@ -344,7 +358,7 @@ class AppRepository(
                     discountAmount = it.discountAmount,
                 )
             }
-        val usedPoints = if (pointsWasRequested) integralPoints(detail) else null
+        val usedPoints = integralCost.toBigDecimalOrNull()?.signum() == 1
         return UnlockResult(
             orderNo = orderNo,
             orderId = orderId,
@@ -353,25 +367,14 @@ class AppRepository(
             integralCost = integralCost,
             otherPromotions = otherPromotions,
             completedAt = System.currentTimeMillis(),
-            pointsUsedPoints = usedPoints,
             pointsUnusedReason = when {
-                usedPoints != null -> null
+                usedPoints -> null
                 pointsUnusedReason != null -> pointsUnusedReason
                 pointsWasRequested -> "账单未显示积分抵扣"
                 else -> null
             },
         )
     }
-
-    // 账单 promotionType=8 的 discountAmount 单位是元；按 1 积分 = 0.01 元换算积分数（与官方小票同一换算）
-    private fun integralPoints(detail: OrderDetailData): String? =
-        detail.promotionList.firstOrNull { it.promotionType == 8 }?.discountAmount
-            ?.toBigDecimalOrNull()
-            ?.multiply(BigDecimal(100))
-            ?.setScale(0, RoundingMode.HALF_UP)
-            ?.stripTrailingZeros()
-            ?.toPlainString()
-            ?.takeIf { it.isNotBlank() && it != "0" }
 
     /**
      * 启动补查：给历史待确认订单（含已建单但没出账的）把真实账单捞回来。
@@ -427,7 +430,8 @@ class AppRepository(
         }
         if (!detail.hasBillAmount()) return null // 账单还没出，下次启动再试
         val originPrice = detail.tradeOrderItem.first().originPrice!!
-        val usedPoints = integralPoints(detail)
+        val usedPoints = detail.promotionList.firstOrNull { it.promotionType == 8 }
+            ?.discountAmount?.toBigDecimalOrNull()?.signum() == 1
         return item.copy(
             orderId = orderId,
             originPrice = originPrice,
@@ -438,8 +442,8 @@ class AppRepository(
                 .map { PromotionItem(promotionType = it.promotionType, discountAmount = it.discountAmount) },
             usageConfirmed = true,
             note = null,
-            pointsUsedPoints = usedPoints,
-            pointsUnusedReason = if (usedPoints != null) null else item.pointsUnusedReason,
+            pointsUsedPoints = null,
+            pointsUnusedReason = if (usedPoints) null else item.pointsUnusedReason,
         )
     }
 
@@ -496,7 +500,7 @@ class AppRepository(
         resp.requireData()
     }
 
-    private companion object {
+    internal companion object {
         const val WATER_CATEGORY_CODE = "04"
         private const val PENDING_CREATE_ATTEMPTS = 4
         private const val PENDING_DETAIL_ATTEMPTS = 2

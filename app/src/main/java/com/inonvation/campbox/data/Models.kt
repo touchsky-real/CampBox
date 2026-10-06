@@ -1,4 +1,4 @@
-﻿package com.inonvation.campbox.data
+package com.inonvation.campbox.data
 
 import com.squareup.moshi.Json
 
@@ -71,6 +71,21 @@ data class AfterPayCreatingData(
     val orderId: String? = null,
 )
 
+data class IntegralLimitRule(
+    val integralTotal: Int? = null,
+    val minUsageCount: Int? = null,
+    val isUserIntegral: Boolean? = null,
+    val userIntegral: Boolean? = null,
+) {
+    fun unusedReason(): String? = when {
+        integralTotal != null && integralTotal <= 0 -> "暂无可用积分"
+        (userIntegral ?: isUserIntegral) == false && minUsageCount != null && minUsageCount > 0 ->
+            "平台要求积分满 $minUsageCount 才可使用" + (integralTotal?.let { "（当前 $it）" } ?: "")
+        (userIntegral ?: isUserIntegral) == false -> "暂未达到平台积分使用条件"
+        else -> null
+    }
+}
+
 data class OrderDetailData(
     val tradeOrderItem: List<TradeOrderItem> = emptyList(),
     val promotionList: List<PromotionItem> = emptyList(),
@@ -96,7 +111,7 @@ data class UnlockResult(
     // 非空表示出水成功但账单环节降级（费用以官方账单为准），UI 据此显示提示而非报错
     val note: String? = null,
     val usageConfirmed: Boolean = true,
-    // 积分使用情况：usedPoints 非空表示已抵扣（积分数）；unusedReason 非空表示未使用及原因
+    // 兼容旧记录字段；旧版换算的积分数不再展示，抵扣金额以 integralCost 为准。
     val pointsUsedPoints: String? = null,
     val pointsUnusedReason: String? = null,
 )

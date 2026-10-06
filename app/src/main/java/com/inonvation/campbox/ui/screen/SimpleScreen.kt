@@ -1,4 +1,4 @@
-﻿package com.inonvation.campbox.ui.screen
+package com.inonvation.campbox.ui.screen
 
 import android.Manifest
 import android.content.Intent
@@ -334,7 +334,13 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
                     successResult.note?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                     DetailRow("订单原价", if (successResult.originPrice == "-") "待确认" else "¥${successResult.originPrice}")
                     DetailRow("花费小票", successResult.ticketCost)
-                    if (successResult.integralCost != "-") DetailRow("积分抵扣", successResult.integralCost)
+                    DetailRow("积分抵扣", when {
+                        successResult.integralCost.toBigDecimalOrNull()?.signum() == 1 ->
+                            "¥${successResult.integralCost}"
+                        successResult.pointsUnusedReason != null -> "未使用：${successResult.pointsUnusedReason}"
+                        successResult.originPrice == "-" -> "账单确认后显示"
+                        else -> "账单未显示积分抵扣"
+                    })
                     successResult.otherPromotions.forEach { p ->
                         DetailRow("其他优惠", p.discountAmount ?: "-")
                     }
@@ -806,7 +812,8 @@ private fun WaterDeviceSheet(
 private fun successSubtitle(r: com.inonvation.campbox.data.UnlockResult): String {
     if (r.originPrice == "-") return "使用已结束，费用以官方账单为准"
     val parts = buildList {
-        if (r.integralCost != "-") add("积分抵扣 ${r.integralCost}")
+        if (r.integralCost.toBigDecimalOrNull()?.signum() == 1) add("积分抵扣 ¥${r.integralCost}")
+        else if (r.pointsUnusedReason != null) add("未使用积分")
         r.otherPromotions.forEach { p -> p.discountAmount?.let { add("其他优惠 $it") } }
     }
     return parts.joinToString(" · ").ifBlank { "小票支付" }

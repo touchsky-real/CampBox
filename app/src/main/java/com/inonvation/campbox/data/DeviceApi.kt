@@ -1,4 +1,4 @@
-﻿package com.inonvation.campbox.data
+package com.inonvation.campbox.data
 
 import retrofit2.http.Field
 import retrofit2.http.FieldMap
@@ -69,6 +69,10 @@ interface DeviceApi {
     @POST("userIntegral/checkUserIsRisk")
     // 官方以 data=true 表示被风控拦截（未实名认证），并非报错
     suspend fun useIntergral(@Field("token") token: String): ApiEnvelope<Boolean?>
+
+    @FormUrlEncoded
+    @POST("userIntegral/limitRule")
+    suspend fun integralLimitRule(@Field("token") token: String): ApiEnvelope<IntegralLimitRule>
 
     @FormUrlEncoded
     @POST("payChannelRoute/addUserAfterPayChannel")

@@ -1,4 +1,4 @@
-﻿package com.inonvation.campbox.ui.screen
+package com.inonvation.campbox.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -223,7 +223,7 @@ private fun OrderCard(
                 DetailRow(
                     "积分",
                     when {
-                        item.pointsUsedPoints != null -> "${item.pointsUsedPoints} 积分（¥${item.integralCost}）"
+                        item.integralCost.toBigDecimalOrNull()?.signum() == 1 -> "抵扣 ¥${item.integralCost}"
                         item.pointsUnusedReason != null -> "未使用（${item.pointsUnusedReason}）"
                         else -> item.integralCost
                     },
