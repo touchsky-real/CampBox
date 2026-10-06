@@ -217,6 +217,32 @@ fun colorSchemeForTheme(colorTheme: ColorTheme, darkTheme: Boolean) = when (colo
     ColorTheme.RED -> if (darkTheme) RedDark else RedLight
 }
 
+/** 设置页配色选择器的色块颜色：手作主题取浅色方案的 secondary 强调色，强调主题取其主色 */
+fun ColorTheme.swatchColor(): Color = when (this) {
+    ColorTheme.GREEN -> Color(0xFF4E6E5D)
+    ColorTheme.PINK -> Color(0xFFB5838D)
+    ColorTheme.YELLOW -> Color(0xFFC4A36E)
+    ColorTheme.BLUE -> Color(0xFF6E8B98)
+    ColorTheme.BROWN -> Color(0xFF8B7D6B)
+    ColorTheme.PURPLE -> Color(0xFF6750A4)
+    ColorTheme.ORANGE -> Color(0xFF8B5000)
+    ColorTheme.TEAL -> Color(0xFF006874)
+    ColorTheme.RED -> Color(0xFF9C4146)
+}
+
+val ColorTheme.label: String
+    get() = when (this) {
+        ColorTheme.GREEN -> "绿色"
+        ColorTheme.PINK -> "粉色"
+        ColorTheme.YELLOW -> "黄色"
+        ColorTheme.BLUE -> "蓝色"
+        ColorTheme.BROWN -> "棕色"
+        ColorTheme.PURPLE -> "紫色"
+        ColorTheme.ORANGE -> "橙色"
+        ColorTheme.TEAL -> "青色"
+        ColorTheme.RED -> "红色"
+    }
+
 @Composable
 fun DeviceControlTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),

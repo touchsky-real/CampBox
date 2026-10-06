@@ -1,6 +1,7 @@
 ﻿package com.inonvation.campbox.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,10 +21,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -44,9 +49,13 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import android.content.Intent
@@ -58,6 +67,8 @@ import com.inonvation.campbox.ui.theme.CardShapes
 import com.inonvation.campbox.ui.theme.ColorTheme
 import com.inonvation.campbox.ui.theme.Spacings
 import com.inonvation.campbox.ui.theme.ThemeMode
+import com.inonvation.campbox.ui.theme.label
+import com.inonvation.campbox.ui.theme.swatchColor
 
 /**
  * 设置页：按 关于 / 外观 / 喝水·胖乖生活 / 校园网 / 洗澡·趣智校园 / 通用 / 调试 分组，
@@ -208,24 +219,20 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                     HorizontalDivider()
                     Spacer(Modifier.height(12.dp))
                     Text("主题配色", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("应用的主色调", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("点击色块立即预览", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(10.dp))
-                    FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Spacings.sm)) {
-                        listOf(
-                            ColorTheme.GREEN to "绿色",
-                            ColorTheme.PINK to "粉色",
-                            ColorTheme.YELLOW to "黄色",
-                            ColorTheme.BLUE to "蓝色",
-                            ColorTheme.BROWN to "棕色",
-                            ColorTheme.PURPLE to "紫色",
-                            ColorTheme.ORANGE to "橙色",
-                            ColorTheme.TEAL to "青色",
-                            ColorTheme.RED to "红色",
-                        ).forEach { (theme, label) ->
-                            FilterChip(
+                    FlowRow(
+                        modifier = Modifier.selectableGroup(),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                    ) {
+                        ColorTheme.entries.forEach { theme ->
+                            ThemeColorSwatch(
+                                color = theme.swatchColor(),
+                                label = theme.label,
                                 selected = state.colorTheme == theme,
-                                onClick = { if (state.hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress); vm.updateColorTheme(theme) },
-                                label = { Text(label) },
+                                hapticEnabled = state.hapticEnabled,
+                                onClick = { vm.updateColorTheme(theme) },
                             )
                         }
                     }
@@ -511,6 +518,47 @@ private fun AccountCard(
                         onAction()
                     }
                     .padding(vertical = 2.dp),
+            )
+        }
+    }
+}
+
+/** 配色选择器色块：OneUI 风格的圆形色板，选中的显示主题色描边与勾 */
+@Composable
+private fun ThemeColorSwatch(
+    color: Color,
+    label: String,
+    selected: Boolean,
+    hapticEnabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val haptic = LocalHapticFeedback.current
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .semantics { contentDescription = label }
+            .selectable(selected = selected, role = Role.RadioButton) {
+                if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onClick()
+            }
+            .padding(4.dp)
+            .border(
+                width = 2.dp,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                shape = CircleShape,
+            )
+            .padding(3.dp)
+            .clip(CircleShape)
+            .background(color),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(18.dp),
             )
         }
     }
