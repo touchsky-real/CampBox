@@ -101,6 +101,7 @@ import com.inonvation.campbox.ui.UnlockFlowState
 import com.inonvation.campbox.ui.pinDeviceShortcut
 import com.inonvation.campbox.ui.qzxy.screen.QzxyShowerSection
 import com.inonvation.campbox.ui.qzxy.screen.QzxyAccountActions
+import com.inonvation.campbox.ui.qzxy.screen.QzxyDeviceDialogs
 import com.inonvation.campbox.ui.qzxy.screen.QzxyAccountSheet
 import com.inonvation.campbox.ui.qzxy.screen.QzxyLoginSheet
 import com.inonvation.campbox.ui.qzxy.screen.QzxyLogoutConfirmDialog
@@ -266,6 +267,8 @@ fun SimpleScreen(state: AppUiState, vm: AppViewModel, onPickIcon: ((Int) -> Unit
             }
         }
     }
+
+    QzxyDeviceDialogs(state, vm, haptic)
 
     // 账户弹层放在列表外，趣智卡片滚出屏幕时仍能从设置打开。
     if (state.qzxy.showLoginSheet) QzxyLoginSheet(state.qzxy, vm)

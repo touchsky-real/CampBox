@@ -283,16 +283,35 @@ fun QzxyShowerSection(state: AppUiState, vm: AppViewModel, haptic: HapticFeedbac
         }
     }
 
-    // 换设备弹层：点设备行弹出（与开水卡的设备选择交互一致）
-    if (q.showDevicePicker && q.loggedIn && q.boundDevice != null) {
-        QzxyDeviceSheet(q = q, vm = vm, haptic = haptic, hapticEnabled = state.hapticEnabled, requestBle = ::requestBleThen, context = context)
-    }
-    if (q.showManualMacDialog) {
-        QzxyManualMacDialog(qzxy = q, vm = vm)
-    }
     if (showErrorDetail) {
         QzxyErrorDetailDialog(q = q) { showErrorDetail = false }
     }
+}
+
+/** 放在主页列表外，设置入口在卡片不可见或尚未绑定设备时也能打开。 */
+@Composable
+fun QzxyDeviceDialogs(state: AppUiState, vm: AppViewModel, haptic: HapticFeedback) {
+    val q = state.qzxy
+    val context = LocalContext.current
+    var pendingScan by remember { mutableStateOf(false) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (pendingScan && vm.state.value.qzxy.loggedIn && vm.state.value.qzxy.showDevicePicker) {
+            if (grants.values.all { it }) vm.qzxyStartScan() else vm.qzxyOnScanPermissionDenied()
+        }
+        pendingScan = false
+    }
+    if (q.loggedIn && q.showDevicePicker) {
+        QzxyDeviceSheet(q, vm, haptic, state.hapticEnabled, requestBle = { action ->
+            val missing = requiredBlePermissions().filter {
+                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+            }
+            if (missing.isEmpty()) action() else {
+                pendingScan = true
+                launcher.launch(missing.toTypedArray())
+            }
+        }, context = context)
+    }
+    if (q.loggedIn && q.showManualMacDialog) QzxyManualMacDialog(q, vm)
 }
 
 /** 行1 设备行：绑定后点设备名弹出换设备弹层 */
@@ -514,7 +533,7 @@ private fun QzxyDeviceSheet(
                 .padding(horizontal = Spacings.xl)
                 .padding(bottom = Spacings.xxl),
         ) {
-            Text("更换淋浴设备", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(if (q.boundDevice == null) "绑定淋浴设备" else "更换淋浴设备", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(
                 "扫描并点选附近热水器即可换绑；也可输入机身 MAC 地址",
                 style = MaterialTheme.typography.bodySmall,
@@ -568,7 +587,6 @@ private fun QzxyDeviceSheet(
                     selected = q.selectedDevice?.macAddress == device.mac,
                     onClick = {
                         vm.qzxySelectDevice(device)
-                        vm.qzxySetDevicePicker(false)
                     },
                 )
             }
@@ -631,7 +649,7 @@ fun QzxyLogoutConfirmDialog(qzxy: QzxyUiState, vm: AppViewModel) {
         title = { Text("确认退出趣智登录", fontWeight = FontWeight.SemiBold) },
         text = {
             Column {
-                Text("退出后需要重新输入手机号和密码才能使用淋浴功能，已绑定的设备会保留。")
+                Text("退出后需要重新登录趣智账号才能使用淋浴功能，已绑定的设备会保留。")
                 if (qzxy.showerFlow is QzxyShowerState.Running || qzxy.showerFlow is QzxyShowerState.Starting) {
                     Spacer(Modifier.height(Spacings.sm))
                     Text(

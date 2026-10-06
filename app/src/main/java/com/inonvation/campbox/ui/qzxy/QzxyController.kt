@@ -54,6 +54,7 @@ class QzxyController(
     private var candidateDeadline: Long = 0
     private var accountGeneration: Long = 0
     private var pendingAccountPage: QzxyAccountPage? = null
+    private var pendingDevicePicker = false
     private var smsTimerJob: Job? = null
     private var smsDeadline: Long = 0
 
@@ -120,6 +121,7 @@ class QzxyController(
     fun dismissLoginSheet() {
         if (state.value.qzxy.loggingIn || state.value.qzxy.sendingSms) return
         pendingAccountPage = null
+        pendingDevicePicker = false
         updateQzxy { it.copy(showLoginSheet = false, password = "", smsCode = "", passwordVisible = false) }
     }
 
@@ -205,6 +207,10 @@ class QzxyController(
                 refreshWallet()
                 restoreActiveOrder()
                 refreshBoundDeviceInfo()
+                if (pendingDevicePicker) {
+                    pendingDevicePicker = false
+                    setDevicePicker(true)
+                }
                 pendingAccountPage?.let { page ->
                     pendingAccountPage = null
                     showAccountPage(page)
@@ -217,6 +223,7 @@ class QzxyController(
     }
 
     fun logout() {
+        pendingDevicePicker = false
         pendingAccountPage = null
         stopEverything()
         repository.logout()
@@ -503,6 +510,15 @@ class QzxyController(
 
     fun setDevicePicker(open: Boolean) {
         if (open) {
+            if (!state.value.qzxy.loggedIn) {
+                pendingDevicePicker = true
+                showLoginSheet()
+                return
+            }
+            if (state.value.qzxy.showerFlow !is QzxyShowerState.Idle) {
+                showError("请先结束当前洗澡流程，再更换设备")
+                return
+            }
             updateQzxy { it.copy(showDevicePicker = true) }
         } else {
             stopScanInternal()

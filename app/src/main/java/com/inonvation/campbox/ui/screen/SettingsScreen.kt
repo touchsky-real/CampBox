@@ -328,11 +328,7 @@ fun SettingsScreen(state: AppUiState, vm: AppViewModel) {
                         subtitle = state.qzxy.boundDevice?.name ?: "未绑定，去扫描或手输 MAC",
                         onClick = {
                             vm.dismissSettings()
-                            if (state.qzxy.loggedIn) {
-                                vm.qzxySetDevicePicker(true)
-                            } else {
-                                vm.qzxyShowLogin()
-                            }
+                            vm.qzxySetDevicePicker(true)
                         },
                         hapticEnabled = state.hapticEnabled,
                     )
