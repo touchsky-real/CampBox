@@ -62,6 +62,9 @@ data class UnlockData(
 data class SyncData(
     val workStatus: Int? = null,
     val identify: String? = null,
+    // 官方客户端以 status 3/5 判定使用结束、6 为设备异常；amount 为本单金额（元）
+    val status: Int? = null,
+    val amount: String? = null,
 )
 
 data class AfterPayCreatingData(
@@ -93,6 +96,9 @@ data class UnlockResult(
     // 非空表示出水成功但账单环节降级（费用以官方账单为准），UI 据此显示提示而非报错
     val note: String? = null,
     val usageConfirmed: Boolean = true,
+    // 积分使用情况：usedPoints 非空表示已抵扣（积分数）；unusedReason 非空表示未使用及原因
+    val pointsUsedPoints: String? = null,
+    val pointsUnusedReason: String? = null,
 )
 
 // 服务端业务错误（保留 code 供诊断层使用，避免丢失后显示伪造的错误码）
@@ -114,6 +120,8 @@ data class OrderHistoryItem(
     val completedAt: Long,
     val usageConfirmed: Boolean = true,
     val note: String? = null,
+    val pointsUsedPoints: String? = null,
+    val pointsUnusedReason: String? = null,
 ) {
     fun toUnlockResult(): UnlockResult = UnlockResult(
         orderNo = orderNo,
@@ -125,6 +133,8 @@ data class OrderHistoryItem(
         completedAt = completedAt,
         usageConfirmed = usageConfirmed,
         note = note,
+        pointsUsedPoints = pointsUsedPoints,
+        pointsUnusedReason = pointsUnusedReason,
     )
 }
 

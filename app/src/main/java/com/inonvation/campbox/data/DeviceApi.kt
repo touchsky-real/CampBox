@@ -67,7 +67,8 @@ interface DeviceApi {
 
     @FormUrlEncoded
     @POST("userIntegral/checkUserIsRisk")
-    suspend fun useIntergral(@Field("token") token: String): ApiEnvelope<EmptyData>
+    // 官方以 data=true 表示被风控拦截（未实名认证），并非报错
+    suspend fun useIntergral(@Field("token") token: String): ApiEnvelope<Boolean?>
 
     @FormUrlEncoded
     @POST("payChannelRoute/addUserAfterPayChannel")

@@ -35,13 +35,21 @@ internal suspend fun monitorWaterUsage(
             if (identifier != null && identifier != orderNo) {
                 return@withTimeoutOrNull WaterUsageOutcome.Pending("设备返回了其他订单，当前订单请在胖乖生活中核对")
             }
+            val belongsToOrder = everWorked || identifier == orderNo
+            val ended = status.status == 3 || status.status == 5
             when {
-                status.workStatus == 2 -> {
+                // 官方客户端以 status 3/5 判定使用结束（6 为设备异常），优先于 workStatus 猜测
+                ended && belongsToOrder ->
+                    return@withTimeoutOrNull WaterUsageOutcome.Completed
+                status.status == 6 -> return@withTimeoutOrNull WaterUsageOutcome.Pending(
+                    "设备上报异常，请确认饮水机是否已停止出水；若已接完水，账单稍后会自动补查",
+                )
+                !ended && status.workStatus == 2 -> {
                     everWorked = true
                     unknownStates = 0
                     onStep("设备工作中，正在等待完成")
                 }
-                status.workStatus != null && (everWorked || identifier == orderNo) ->
+                status.workStatus != null && belongsToOrder ->
                     return@withTimeoutOrNull WaterUsageOutcome.Completed
                 else -> {
                     unknownStates++

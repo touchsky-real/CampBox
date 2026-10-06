@@ -220,7 +220,14 @@ private fun OrderCard(
                 item.note?.let { DetailRow("说明", it) }
                 DetailRow("原价", item.originPrice)
                 DetailRow("小票", item.ticketCost)
-                DetailRow("积分", item.integralCost)
+                DetailRow(
+                    "积分",
+                    when {
+                        item.pointsUsedPoints != null -> "${item.pointsUsedPoints} 积分（¥${item.integralCost}）"
+                        item.pointsUnusedReason != null -> "未使用（${item.pointsUnusedReason}）"
+                        else -> item.integralCost
+                    },
+                )
             }
         }
     }

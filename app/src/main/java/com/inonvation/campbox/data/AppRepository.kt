@@ -1,7 +1,9 @@
 ﻿package com.inonvation.campbox.data
 
+import java.math.BigDecimal
+import java.math.RoundingMode
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
@@ -99,6 +101,7 @@ class AppRepository(
 
         var currentStep = "准备解锁"
         var pointsEnabled = usePoints
+        var pointsUnusedReason: String? = if (usePoints) null else "已在设置中关闭积分抵扣"
         try {
             onStep("正在获取 SKU")
             currentStep = "获取 SKU"
@@ -136,11 +139,18 @@ class AppRepository(
                 onStep("正在检查积分")
                 currentStep = "积分风控检查"
                 try {
-                    api.useIntergral(token).throwIfFailed()
+                    val resp = api.useIntergral(token)
+                    resp.throwIfFailed()
+                    if (resp.data == true) {
+                        pointsEnabled = false
+                        pointsUnusedReason = "未实名认证，暂无法使用积分"
+                        onStep("积分暂不可用（未实名认证），本次不使用积分")
+                    }
                 } catch (e: Exception) {
                     if (!e.isPointsRiskError()) throw e
                     pointsEnabled = false
-                    onStep("积分暂不可用（未实名认证），本次不使用积分")
+                    pointsUnusedReason = pointsRiskReason(e)
+                    onStep("积分暂不可用（${pointsUnusedReason}），本次不使用积分")
                 }
             }
 
@@ -161,6 +171,8 @@ class AppRepository(
             } catch (e: Exception) {
                 // 服务端在解锁环节才拦截实名/积分风控时，对齐官方关闭积分开关的行为重试一次
                 if (pointsEnabled && e.isPointsRiskError()) {
+                    pointsEnabled = false
+                    pointsUnusedReason = pointsRiskReason(e)
                     api.unlockWater(headers = headers, skuId = skuId, promotions = promotions(false), token = token).requireData()
                 } else {
                     throw e
@@ -169,7 +181,7 @@ class AppRepository(
 
         val orderNo = unlock.orderNo?.takeIf { it.isNotBlank() } ?: error("未获取到订单号")
         // 接到订单号立即落盘，即使 App 被关闭，也保留一条明确标记为待确认的记录。
-        savePendingWater(device, orderNo, "开水指令已受理，使用与账单状态待确认")
+        savePendingWater(device, orderNo, "开水指令已受理，使用与账单状态待确认", pointsUnusedReason)
         onStarted()
         onStep("开水指令已受理，正在确认设备状态")
         currentStep = "设备状态轮询"
@@ -186,57 +198,36 @@ class AppRepository(
             )
         }
         if (usage is WaterUsageOutcome.Pending) {
-            return savePendingWater(device, orderNo, usage.reason)
+            // 设备状态没确认不等于没出水：账单接口按订单号幂等，补调一次把真实结果捞回来
+            return recoverPendingWater(
+                device, orderNo, usage.reason, token,
+                pointsWasRequested = usePoints,
+                pointsUnusedReason = pointsUnusedReason,
+                onStep = onStep,
+            )
         }
         // 始终结算自己的订单，不能用设备最后一次返回的其他订单号替换。
         val finalOrderNo = orderNo
 
         // 水已出完，账单环节失败不应判为开水失败——降级为待确认订单，避免吓人的「未知错误」
-        var orderId = ""
-        val detail = try {
-            withTimeoutOrNull(20_000) {
-                onStep("正在创建后付订单")
-                currentStep = "创建后付订单"
-                orderId = api.createAfterPay(orderNo = finalOrderNo, token = token).requireData().orderId
-                    ?: error("未获取到 orderId")
-                onStep("正在查询订单详情")
-                currentStep = "查询订单详情"
-                api.orderDetail(orderId = orderId, token = token).requireData()
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null
-        }
+        val (orderId, detail) = settleOrderBill(
+            orderNo = finalOrderNo, token = token, onStep = onStep,
+            createAttempts = 1, detailAttempts = 1, label = "",
+        )
         if (detail == null) {
             val result = UnlockResult(
                 orderNo = finalOrderNo, orderId = orderId,
                 originPrice = "-", ticketCost = "-", integralCost = "-",
                 otherPromotions = emptyList(), completedAt = System.currentTimeMillis(),
                 note = "设备已结束使用，账单暂未确认，实际费用以胖乖生活账单为准",
+                pointsUnusedReason = pointsUnusedReason,
             )
             saveWaterResult(device, result)
             return result
         }
-        val ticketCost = detail.promotionList.firstOrNull { it.promotionType == 4 }?.discountAmount ?: "-"
-        val integralCost = detail.promotionList.firstOrNull { it.promotionType == 8 }?.discountAmount ?: "-"
-        val otherPromotions = detail.promotionList
-            .filter { it.promotionType != 4 && it.promotionType != 8 }
-            .map {
-                PromotionItem(
-                    promotionType = it.promotionType,
-                    discountAmount = it.discountAmount,
-                )
-            }
-
-        val result = UnlockResult(
-            orderNo = finalOrderNo,
-            orderId = orderId,
-            originPrice = detail.tradeOrderItem.firstOrNull()?.originPrice ?: "-",
-            ticketCost = ticketCost,
-            integralCost = integralCost,
-            otherPromotions = otherPromotions,
-            completedAt = System.currentTimeMillis(),
+        val result = buildBillResult(
+            finalOrderNo, orderId, detail,
+            pointsWasRequested = usePoints, pointsUnusedReason = pointsUnusedReason,
         )
         saveWaterResult(device, result)
         return result
@@ -255,11 +246,13 @@ class AppRepository(
 
 
 
-    private fun savePendingWater(device: DeviceItem, orderNo: String, reason: String): UnlockResult {
+    private fun savePendingWater(
+        device: DeviceItem, orderNo: String, reason: String, pointsUnusedReason: String? = null,
+    ): UnlockResult {
         val result = UnlockResult(
             orderNo = orderNo, orderId = "", originPrice = "-", ticketCost = "-", integralCost = "-",
             otherPromotions = emptyList(), completedAt = System.currentTimeMillis(),
-            note = reason, usageConfirmed = false,
+            note = reason, usageConfirmed = false, pointsUnusedReason = pointsUnusedReason,
         )
         saveWaterResult(device, result)
         return result
@@ -272,7 +265,182 @@ class AppRepository(
             originPrice = result.originPrice, ticketCost = result.ticketCost,
             integralCost = result.integralCost, otherPromotions = result.otherPromotions,
             completedAt = result.completedAt, usageConfirmed = result.usageConfirmed, note = result.note,
+            pointsUsedPoints = result.pointsUsedPoints, pointsUnusedReason = result.pointsUnusedReason,
         ))
+    }
+
+    /**
+     * 结算账单：createAfterPay → orderDetail。
+     * createAfterPay 按订单号幂等（官方客户端对同一单也是无限重试），失败重试不会重复建单。
+     * first 为空表示尚未拿到 orderId；second 为 null 表示尚未查到有效账单。
+     */
+    private suspend fun settleOrderBill(
+        orderNo: String,
+        token: String,
+        onStep: suspend (String) -> Unit,
+        createAttempts: Int,
+        detailAttempts: Int,
+        label: String,
+    ): Pair<String, OrderDetailData?> = settleWaterBill(
+        createOrder = { api.createAfterPay(orderNo = orderNo, token = token).requireData().orderId },
+        queryDetail = { api.orderDetail(orderId = it, token = token).requireData() },
+        onStep = onStep, createAttempts = createAttempts, detailAttempts = detailAttempts, label = label,
+    )
+
+    /** 设备状态待确认时的兜底：补调账单接口，查到就落成真实结果，查不到维持待确认 */
+    private suspend fun recoverPendingWater(
+        device: DeviceItem,
+        orderNo: String,
+        reason: String,
+        token: String,
+        pointsWasRequested: Boolean,
+        pointsUnusedReason: String?,
+        onStep: suspend (String) -> Unit,
+    ): UnlockResult {
+        onStep("设备状态未确认，正在补查账单")
+        val (orderId, detail) = settleOrderBill(
+            orderNo = orderNo, token = token, onStep = onStep,
+            createAttempts = PENDING_CREATE_ATTEMPTS, detailAttempts = PENDING_DETAIL_ATTEMPTS,
+            label = "补查账单：",
+        )
+        if (detail != null) {
+            val result = buildBillResult(
+                orderNo, orderId, detail,
+                pointsWasRequested = pointsWasRequested, pointsUnusedReason = pointsUnusedReason,
+            )
+            saveWaterResult(device, result)
+            return result
+        }
+        if (orderId.isNotBlank()) {
+            // 账单已建但还没出账：维持待确认，留给启动补查继续追
+            val result = UnlockResult(
+                orderNo = orderNo, orderId = orderId,
+                originPrice = "-", ticketCost = "-", integralCost = "-",
+                otherPromotions = emptyList(), completedAt = System.currentTimeMillis(),
+                note = "账单已生成但暂未出账，实际费用以胖乖生活账单为准",
+                usageConfirmed = false,
+                pointsUnusedReason = pointsUnusedReason,
+            )
+            saveWaterResult(device, result)
+            return result
+        }
+        return savePendingWater(device, orderNo, reason, pointsUnusedReason)
+    }
+
+    private fun buildBillResult(
+        orderNo: String,
+        orderId: String,
+        detail: OrderDetailData,
+        pointsWasRequested: Boolean,
+        pointsUnusedReason: String?,
+    ): UnlockResult {
+        val ticketCost = detail.promotionList.firstOrNull { it.promotionType == 4 }?.discountAmount ?: "-"
+        val integralCost = detail.promotionList.firstOrNull { it.promotionType == 8 }?.discountAmount ?: "-"
+        val otherPromotions = detail.promotionList
+            .filter { it.promotionType != 4 && it.promotionType != 8 }
+            .map {
+                PromotionItem(
+                    promotionType = it.promotionType,
+                    discountAmount = it.discountAmount,
+                )
+            }
+        val usedPoints = if (pointsWasRequested) integralPoints(detail) else null
+        return UnlockResult(
+            orderNo = orderNo,
+            orderId = orderId,
+            originPrice = detail.tradeOrderItem.firstOrNull()?.originPrice ?: "-",
+            ticketCost = ticketCost,
+            integralCost = integralCost,
+            otherPromotions = otherPromotions,
+            completedAt = System.currentTimeMillis(),
+            pointsUsedPoints = usedPoints,
+            pointsUnusedReason = when {
+                usedPoints != null -> null
+                pointsUnusedReason != null -> pointsUnusedReason
+                pointsWasRequested -> "账单未显示积分抵扣"
+                else -> null
+            },
+        )
+    }
+
+    // 账单 promotionType=8 的 discountAmount 单位是元；按 1 积分 = 0.01 元换算积分数（与官方小票同一换算）
+    private fun integralPoints(detail: OrderDetailData): String? =
+        detail.promotionList.firstOrNull { it.promotionType == 8 }?.discountAmount
+            ?.toBigDecimalOrNull()
+            ?.multiply(BigDecimal(100))
+            ?.setScale(0, RoundingMode.HALF_UP)
+            ?.stripTrailingZeros()
+            ?.toPlainString()
+            ?.takeIf { it.isNotBlank() && it != "0" }
+
+    /**
+     * 启动补查：给历史待确认订单（含已建单但没出账的）把真实账单捞回来。
+     * 只追最近 7 天内的，单次最多 10 笔；登录失效即停，单笔失败不影响其余。
+     * 返回修复笔数。
+     */
+    suspend fun repairPendingOrders(): Int {
+        val now = System.currentTimeMillis()
+        val targets = orderHistory()
+            .filter {
+                (!it.usageConfirmed || it.originPrice == "-") &&
+                    now - it.completedAt <= REPAIR_MAX_AGE_DAYS * 86_400_000L
+            }
+            .take(REPAIR_MAX_ORDERS)
+        if (targets.isEmpty()) return 0
+        val token = requireToken()
+        var repaired = 0
+        for (item in targets) {
+            if (localToken() != token) break
+            if (orderHistory().none { it == item }) continue
+            try {
+                val updated = repairOne(item, token)
+                // 请求期间可能已退出账号、清空历史或完成本单，旧快照不能重新写回。
+                if (localToken() != token) break
+                if (updated != null && orderHistory().any { it == item }) {
+                    orderHistoryStore.add(updated)
+                    repaired++
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: TokenExpiredException) {
+                break
+            } catch (_: Exception) {
+            }
+            delay(REPAIR_INTERVAL_MS)
+        }
+        return repaired
+    }
+
+    private suspend fun repairOne(item: OrderHistoryItem, token: String): OrderHistoryItem? {
+        val orderId = item.orderId.takeIf { it.isNotBlank() }
+            ?: api.createAfterPay(orderNo = item.orderNo, token = token).requireData().orderId
+                ?.takeIf { it.isNotBlank() }
+            ?: return null
+        val detail = try {
+            api.orderDetail(orderId = orderId, token = token).requireData()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: TokenExpiredException) {
+            throw e
+        } catch (_: Exception) {
+            return null
+        }
+        if (!detail.hasBillAmount()) return null // 账单还没出，下次启动再试
+        val originPrice = detail.tradeOrderItem.first().originPrice!!
+        val usedPoints = integralPoints(detail)
+        return item.copy(
+            orderId = orderId,
+            originPrice = originPrice,
+            ticketCost = detail.promotionList.firstOrNull { it.promotionType == 4 }?.discountAmount ?: "-",
+            integralCost = detail.promotionList.firstOrNull { it.promotionType == 8 }?.discountAmount ?: "-",
+            otherPromotions = detail.promotionList
+                .filter { it.promotionType != 4 && it.promotionType != 8 }
+                .map { PromotionItem(promotionType = it.promotionType, discountAmount = it.discountAmount) },
+            usageConfirmed = true,
+            note = null,
+            pointsUsedPoints = usedPoints,
+            pointsUnusedReason = if (usedPoints != null) null else item.pointsUnusedReason,
+        )
     }
 
     // wrap 抛出的 IllegalStateException 丢失步骤上下文，未包装异常时用 currentStep 兜底
@@ -303,6 +471,13 @@ class AppRepository(
             msg.contains("积分") && (msg.contains("拦截") || msg.contains("风险"))
     }
 
+    // 把风控拦截的服务端消息翻译成给用户看的原因
+    private fun pointsRiskReason(e: Throwable): String = when {
+        e.message?.contains("实名") == true || e.message?.contains("认证") == true -> "未实名认证"
+        e.message?.contains("风控") == true -> "积分风控限制"
+        else -> e.message?.take(40) ?: "积分暂不可用"
+    }
+
     private fun requireToken(): String = tokenStore.readToken()?.takeIf { it.isNotBlank() }
         ?: throw NotLoggedInException()
 
@@ -323,6 +498,11 @@ class AppRepository(
 
     private companion object {
         const val WATER_CATEGORY_CODE = "04"
+        private const val PENDING_CREATE_ATTEMPTS = 4
+        private const val PENDING_DETAIL_ATTEMPTS = 2
+        private const val REPAIR_MAX_AGE_DAYS = 7
+        private const val REPAIR_MAX_ORDERS = 10
+        private const val REPAIR_INTERVAL_MS = 500L
         const val PROMOTIONS_WITH_POINTS =
             """[{"assetId":"0","oldPromotionId":"","orgId":"0","promotionId":"0","promotionType":"-6"},{"assetId":"0","oldPromotionId":"","orgId":"0","promotionId":"0","promotionType":"-7"},{"assetId":"0","oldPromotionId":"0","orgId":"0","promotionId":"0","promotionType":"8"}]"""
 

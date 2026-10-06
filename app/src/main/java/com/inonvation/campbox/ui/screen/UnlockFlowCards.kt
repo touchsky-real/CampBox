@@ -145,8 +145,17 @@ internal fun InlineSuccess(result: UnlockResult, onShowDetail: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         InlineSuccessPriceRow("原价", result.originPrice)
-        InlineSuccessPriceRow("抵扣", result.integralCost)
+        InlineSuccessPriceRow("抵扣", result.integralCost, points = result.pointsUsedPoints)
         InlineSuccessPriceRow("花费", calculateActualCost(result))
+        result.pointsUnusedReason?.let { reason ->
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "未使用积分：$reason",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                modifier = Modifier.padding(end = 16.dp),
+            )
+        }
         result.note?.let { note ->
             Spacer(Modifier.height(4.dp))
             Text(
@@ -167,7 +176,7 @@ internal fun InlineSuccess(result: UnlockResult, onShowDetail: () -> Unit) {
 }
 
 @Composable
-private fun InlineSuccessPriceRow(label: String, value: String) {
+private fun InlineSuccessPriceRow(label: String, value: String, points: String? = null) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -179,7 +188,11 @@ private fun InlineSuccessPriceRow(label: String, value: String) {
             modifier = Modifier.width(52.dp)
         )
         Text(
-            text = if (value == "-") "-" else "¥$value",
+            text = when {
+                value == "-" -> "-"
+                points != null -> "¥$value（${points} 积分）"
+                else -> "¥$value"
+            },
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface

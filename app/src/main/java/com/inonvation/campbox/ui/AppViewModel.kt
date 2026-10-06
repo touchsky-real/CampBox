@@ -69,6 +69,7 @@ class AppViewModel(
     private val context: Context = application.applicationContext
     private val unlockMutex = kotlinx.coroutines.sync.Mutex()
     private var unlockJob: Job? = null
+    private var pendingOrdersRepairJob: Job? = null
     private var pendingWaterPermissionDevice: DeviceItem? = null
     private var devicesLoadAttempted = false
 
@@ -126,6 +127,7 @@ class AppViewModel(
                 refreshBalance()
                 refreshDevices()
                 refreshTodayWater()
+                repairPendingOrders()
             },
             showToast = ::showToast,
             showError = ::showError,
@@ -295,6 +297,7 @@ class AppViewModel(
             refreshDevices()
             refreshBalance()
             refreshTodayWater()
+            repairPendingOrders()
         }
         // 打开 App 时自动签到
         autoSignInOnLaunch()
@@ -685,6 +688,32 @@ class AppViewModel(
     fun refreshTodayWater() {
         val count = repository.orderHistory().count { it.usageConfirmed }
         _state.update { it.copy(totalWaterCount = count) }
+    }
+
+    /** 启动时自动补查历史待确认订单：查到账单就回填真实金额，失败静默不影响启动 */
+    private fun repairPendingOrders() {
+        pendingOrdersRepairJob?.cancel()
+        pendingOrdersRepairJob = viewModelScope.launch {
+            try {
+                val token = repository.localToken()
+                val repaired = repository.repairPendingOrders()
+                if (repaired > 0 && token != null && repository.localToken() == token) {
+                    val history = repository.orderHistory()
+                    _state.update {
+                        it.copy(
+                            orderHistory = history,
+                            totalWaterCount = history.count { order -> order.usageConfirmed },
+                        )
+                    }
+                    refreshBalance(silent = true)
+                    showToast("已自动补回 $repaired 笔待确认订单")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 补查失败保持静默：登录失效由启动时的余额/设备请求负责提示
+            }
+        }
     }
 
     fun showOrderHistory() {

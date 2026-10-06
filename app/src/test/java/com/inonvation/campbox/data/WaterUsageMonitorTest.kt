@@ -72,4 +72,28 @@ class WaterUsageMonitorTest {
             monitorWaterUsage("mine", query = { throw CancellationException("cancelled") }, onStep = {})
         }
     }
+
+    @Test fun `官方状态三或五视为使用结束`() = runTest {
+        assertEquals(WaterUsageOutcome.Completed,
+            monitorWaterUsage("mine", query = { SyncData(workStatus = 0, identify = "mine", status = 3) }, onStep = {}))
+        assertEquals(WaterUsageOutcome.Completed,
+            monitorWaterUsage("mine", query = { SyncData(workStatus = 0, identify = "mine", status = 5) }, onStep = {}))
+    }
+
+    @Test fun `设备异常状态不伪造结束`() = runTest {
+        assertIs<WaterUsageOutcome.Pending>(monitorWaterUsage("mine",
+            query = { SyncData(workStatus = 0, identify = "mine", status = 6) }, onStep = {}))
+    }
+
+    @Test fun `结束状态缺少订单号且未见出水不能认作本单完成`() = runTest {
+        for (status in listOf(3, 5)) {
+            assertIs<WaterUsageOutcome.Pending>(monitorWaterUsage("mine",
+                query = { SyncData(workStatus = 0, status = status) }, onStep = {}))
+        }
+    }
+
+    @Test fun `其他订单的官方结束状态也不能结算本单`() = runTest {
+        assertIs<WaterUsageOutcome.Pending>(monitorWaterUsage("mine",
+            query = { SyncData(workStatus = 0, identify = "other", status = 3) }, onStep = {}))
+    }
 }
