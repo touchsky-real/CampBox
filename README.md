@@ -51,7 +51,7 @@ APK 输出到 `app/build/outputs/apk/`。Debug 沿用 `app/debug.keystore`。Rel
 
 ## 效果示例
 
-![Demo](.img/demo.jpg)
+![Demo](.img/demo.webp)
 
 
 ## 项目说明
