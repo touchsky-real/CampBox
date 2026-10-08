@@ -49,6 +49,11 @@ APK 输出到 `app/build/outputs/apk/`。Debug 沿用 `app/debug.keystore`。Rel
 
 推送 `v*` 标签后，GitHub Actions 会自动构建并发布 Release APK；版本名取自标签。流程见 [release-apk.yml](.github/workflows/release-apk.yml)。
 
+## 效果示例
+
+![Demo](.img/demo.jpg)
+
+
 ## 项目说明
 
 本项目是非官方第三方工具，与学校及相关服务提供方无隶属关系。校园网配置面向太原理工大学，其他平台功能的兼容性受学校、设备及接口变化影响。
