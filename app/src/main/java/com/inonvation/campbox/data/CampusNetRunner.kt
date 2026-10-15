@@ -1,4 +1,4 @@
-﻿package com.inonvation.campbox.data
+package com.inonvation.campbox.data
 
 import android.Manifest
 import android.content.Context
@@ -85,7 +85,9 @@ class CampusNetRunner(private val context: Context) {
             val client = wifiClient(wifi.network)
             try {
                 log(if (attempt == 0) "检查 Wi-Fi 外网连通性..." else "重新检查校园网（第 ${attempt + 1}/3 次）...")
-                if (checkInternet(client)) {
+                // Android 已把该 Wi-Fi 标记为 VALIDATED 时，说明系统网络探测已经确认可上网；
+                // 不应再被某个被学校拦截的第三方 generate_204 探针误判为未联网。
+                if (isValidated(wifi.network) || checkInternet(client)) {
                     log("校园 Wi-Fi 外网已连通，无需重复认证")
                     return CampusNetResult.Success
                 }
@@ -94,11 +96,14 @@ class CampusNetRunner(private val context: Context) {
                 // DHCP 更新后不能继续提交旧 IP。
                 if (wifiSnapshot() != wifi) {
                     lastFailure = "Wi-Fi 地址正在更新"
+                } else if (portal == null) {
+                    lastFailure = "未获取到校园网认证网关，请使用官方网页登录入口完成认证"
+                    log(lastFailure)
                 } else {
-                    val userIp = portal?.userIp ?: wifi.ip
-                    val acIp = portal?.acIp ?: AC_IP
+                    val userIp = portal.userIp ?: wifi.ip
+                    val acIp = portal.acIp ?: AC_IP
                     log("本机 IP：$userIp")
-                    log(if (portal != null) "已获取本次网关参数：AC=$acIp" else "未获取网关重定向，使用学校默认认证参数")
+                    log("已获取本次网关参数：AC=$acIp")
                     val url = (PORTAL_BASE + LOGIN_PATH).toHttpUrl().newBuilder().apply {
                         buildParams(username, password, userIp, acIp).forEach { (k, v) -> addQueryParameter(k, v) }
                     }.build()
@@ -158,7 +163,7 @@ class CampusNetRunner(private val context: Context) {
         val wifi = wifiSnapshot() ?: return false
         val client = wifiClient(wifi.network)
         return try {
-            checkInternet(client)
+            isValidated(wifi.network) || checkInternet(client)
         } finally {
             cleanupCampusResources(
                 { client.dispatcher.cancelAll() },
@@ -173,6 +178,10 @@ class CampusNetRunner(private val context: Context) {
         caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true &&
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
     }
+
+    private fun isValidated(network: Network): Boolean =
+        connectivity.getNetworkCapabilities(network)
+            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
 
     private data class WifiSnapshot(val network: Network, val ip: String)
 
@@ -235,7 +244,12 @@ class CampusNetRunner(private val context: Context) {
             withTimeoutOrNull(3_000) {
                 try {
                     val reply = request(client, Request.Builder().url(url).header("User-Agent", UA).build())
-                    reply.code == 204 && reply.body.isEmpty()
+                    when {
+                        reply.code == 204 && reply.body.isEmpty() -> true
+                        url.contains("connecttest.txt") && reply.code in 200..299 &&
+                            reply.body.contains("Microsoft Connect Test", ignoreCase = true) -> true
+                        else -> false
+                    }
                 } catch (_: IOException) { false }
             } == true
         }
@@ -322,6 +336,8 @@ class CampusNetRunner(private val context: Context) {
         private val PROBES = listOf(
             "http://connect.rom.miui.com/generate_204",
             "http://connectivitycheck.platform.hicloud.com/generate_204",
+            "http://connectivitycheck.gstatic.com/generate_204",
+            "http://www.msftconnecttest.com/connecttest.txt",
         )
         private val DISCOVERY_PROBES = listOf(
             "http://connect.rom.miui.com/generate_204",
