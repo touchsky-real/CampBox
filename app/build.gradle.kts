@@ -42,8 +42,8 @@ android {
         applicationId = "com.inonvation.campbox"
         minSdk = 26
         targetSdk = 35
-        versionCode = project.findProperty("buildVersionCode")?.toString()?.toIntOrNull() ?: 30105
-        versionName = project.findProperty("buildVersionName")?.toString() ?: "3.1.5"
+        versionCode = project.findProperty("buildVersionCode")?.toString()?.toIntOrNull() ?: 30106
+        versionName = project.findProperty("buildVersionName")?.toString() ?: "3.1.6"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
