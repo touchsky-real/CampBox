@@ -1,4 +1,4 @@
-﻿package com.inonvation.campbox.data
+package com.inonvation.campbox.data
 
 import com.squareup.moshi.Json
 
@@ -29,7 +29,17 @@ data class EmptyData(
 
 data class LoginData(
     val token: String? = null,
-)
+    // 官方 LoginBean 同时包含业务 code 和 token；部分兼容接口会把凭证放在 code。
+    val code: String? = null,
+    val accessToken: String? = null,
+    val authorization: String? = null,
+    val jwtToken: String? = null,
+) {
+    fun resolvedToken(): String? = sequenceOf(token, accessToken, authorization, jwtToken)
+        .mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
+        .firstOrNull()
+        ?: code?.trim()?.takeIf { it.isNotEmpty() && it != "0" && it != "200" }
+}
 
 data class DeviceItem(
     val goodsId: String? = null,

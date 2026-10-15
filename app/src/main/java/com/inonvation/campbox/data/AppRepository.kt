@@ -1,4 +1,4 @@
-﻿package com.inonvation.campbox.data
+package com.inonvation.campbox.data
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -48,8 +48,10 @@ class AppRepository(
     }
 
     suspend fun login(phone: String, code: String): String {
-        val token = api.login(phone = phone, verify = code).requireData().token
-            ?: error("登录成功但未返回 token")
+        val token = api.login(phone = phone, verify = code)
+            .requireData()
+            .resolvedToken()
+            ?: error("登录成功但未返回 token（token/code/accessToken/authorization/jwtToken 均为空）")
         tokenStore.saveToken(token)
         return token
     }

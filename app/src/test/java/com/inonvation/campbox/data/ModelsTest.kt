@@ -58,6 +58,14 @@ class ModelsTest {
         assertEquals("hello", envelope.requireData())
     }
 
+    @Test
+    fun loginData_resolvedToken_matchesOfficialAndCompatibleFields() {
+        assertEquals("official-token", LoginData(token = "official-token", code = "business-code").resolvedToken())
+        assertEquals("access-token", LoginData(accessToken = "access-token").resolvedToken())
+        assertEquals("business-token", LoginData(code = "business-token").resolvedToken())
+        assertNull(LoginData(code = "0").resolvedToken())
+    }
+
     @Test(expected = ApiException::class)
     fun apiEnvelope_requireData_nullData_throws() {
         val envelope = ApiEnvelope<String>(code = 400, msg = "error")
